@@ -1,3 +1,7 @@
 *.pyc
 models/
 data/
+results/
+mymodels/
+runs/
+test.ipynb

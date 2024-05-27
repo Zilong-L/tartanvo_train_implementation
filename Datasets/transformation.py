@@ -3,11 +3,19 @@ import numpy as np
 #import pyrr
 from scipy.spatial.transform import Rotation as R
 
+# turn a compact 3x4 matrix into a 4x4 matrix for future calculation
+# input: 1 x 12 transformation numpy array
+# output: 4 x 4 transformation numpy array
 def line2mat(line_data):
     mat = np.eye(4)
     mat[0:3,:] = line_data.reshape(3,4)
     return np.matrix(mat)
 
+# compute relative pose to the first frame
+# by accumulating the motion
+# poses are in compact 3x4 matrix format
+# input: N x 12 motion numpy array
+# output: N+1 x 12 pose numpy array
 def motion2pose(data):
     data_size = data.shape[0]
     all_pose = np.zeros((data_size+1,12))
@@ -16,22 +24,43 @@ def motion2pose(data):
     pose = np.matrix(np.eye(4,4))
     for i in range(0,data_size):
         data_mat = line2mat(data[i,:])
-        pose = pose*data_mat
+        # FIXME: matrix multiplication should be applied here.
+        # DONE: multiplication of *, @ and dot are the same for np.matrix.
+        # FIXME: multiplication order is also under question.
+        # DONE: orders don't matter because they are all relative motions, no difference between A*B and B*A
+        pose = pose*data_mat 
         pose_line = np.array(pose[0:3,:]).reshape(1,12)
         all_pose[i+1,:] = pose_line
     return all_pose
 
+# compute relative motion between two frames
+# by computing the inverse of the first frame and multiply the second frame
+# input poses are defined in global coordinate
+# input: N x 12 pose(global world coordinates) numpy array
+# output: N x 12 compact motion(between consecutive frames) numpy array
 def pose2motion(data, skip=0):
     data_size = data.shape[0]
     all_motion = np.zeros((data_size-1,12))
     for i in range(0,data_size-1-skip):
         pose_curr = line2mat(data[i,:])
         pose_next = line2mat(data[i+1+skip,:])
-        motion = pose_curr.I*pose_next
+        motion = pose_curr.I@pose_next 
         motion_line = np.array(motion[0:3,:]).reshape(1,12)
         all_motion[i,:] = motion_line
     return all_motion
 
+def pose2motion_bug(data, skip=0):
+    data_size = data.shape[0]
+    all_motion = np.zeros((data_size-1,12))
+    for i in range(0,data_size-1-skip):
+        pose_curr = line2mat(data[i,:])
+        pose_next = line2mat(data[i+1+skip,:])
+        # FIXME: matrix multiplication should be applied here.
+        # DONE: multiplication of *, @ and dot are the same for np.matrix.
+        motion = pose_curr.I*pose_next 
+        motion_line = np.array(motion[0:3,:]).reshape(1,12)
+        all_motion[i,:] = motion_line
+    return all_motion
 def SE2se(SE_data):
     result = np.zeros((6))
     result[0:3] = np.array(SE_data[0:3,3].T)
@@ -87,16 +116,32 @@ def ses2poses_quat(data):
     '''
     data_size = data.shape[0]
     all_pose_quat = np.zeros((data_size+1,7))
+    # date type [x,y,z,qx,qy,qz,qw]
+    # relative to the first frame
+    # first frame is set to no rotation and no translation
     all_pose_quat[0,:] = np.array([0., 0., 0., 0., 0., 0., 1.])
     pose = np.matrix(np.eye(4,4))
     for i in range(0,data_size):
         data_mat = se2SE(data[i,:])
+        # accumulate the pose
+        # FIXME: matrix multiplication should be applied here.
+        # DONE: multiplication of *, @ and dot are the same for np.matrix.
+        # FIXME: multiplication order is also under question.
+        # DONE: orders don't matter because they are all relative motions, no difference between A*B and B*A
+
+
         pose = pose*data_mat
-        quat = SO2quat(pose[0:3,0:3])
+
+        # extract the translation 
         all_pose_quat[i+1,:3] = np.array([pose[0,3], pose[1,3], pose[2,3]])
+        
+        # extract the rotation
+        quat = SO2quat(pose[0:3,0:3])
         all_pose_quat[i+1,3:] = quat      
     return all_pose_quat
     
+# turn a compact 3x4 matrix into even smaller
+# 6D vector representation
 def SEs2ses(motion_data):
     data_size = motion_data.shape[0]
     ses = np.zeros((data_size,6))

@@ -1,15 +1,12 @@
+from cgi import test
 import torch
 import numpy as np
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.tensorboard import SummaryWriter   
-from torch.utils.data import DataLoader
-from Datasets.utils import ToTensor, Compose, CropCenter, dataset_intrinsics, DownscaleFlow, plot_traj, visflow
-from Datasets.tartanDataset import TartanDataset
-from Datasets.transformation import ses2poses_quat
-from evaluator.tartanair_evaluator import TartanAirEvaluator
+
 from Network.VOFlowNet import VOFlowRes as FlowPoseNet
 
-from utils.train_pose_utils import load_model, save_model, train_pose_batch
+from utils.train_pose_utils import load_from_file,load_model, save_model, train_pose_batch, validate
 import argparse
 
 def get_args():
@@ -56,7 +53,7 @@ if __name__ == '__main__':
 
     # load trajectory data from a folder
     datastr = 'tartanair'
-    focalx, focaly, centerx, centery = dataset_intrinsics('tartanair') 
+
     with open('/root/volume/code/python/tartanvo/data/pose_left_paths.txt', 'r') as f:
         posefiles = f.readlines()
 
@@ -64,7 +61,7 @@ if __name__ == '__main__':
     iteration = 0 
     num_epochs = 9999
     learning_rate = 1e-4
-    total_iterations = 100000
+    total_iterations = 100
     
     model = FlowPoseNet()
     model = torch.nn.DataParallel(model).to(device)
@@ -74,32 +71,33 @@ if __name__ == '__main__':
     start_epoch,iteration = load_model(model, optimizer, scheduler, args.model_name)
 
     done = False
+    with open('/root/volume/code/python/tartanvo/data/test/pose_left_paths.txt', 'r') as f:
+        testposefiles = f.readlines()
+
     for epoch in range(start_epoch,num_epochs):
         for posefile in posefiles:
             posefile = posefile.strip()
-            print(posefile)
-            transform = Compose([CropCenter((args.image_height, args.image_width)), DownscaleFlow(), ToTensor()])
-            trainDataset = TartanDataset( posefile = posefile, transform=transform, 
-                                                focalx=focalx, focaly=focaly, centerx=centerx, centery=centery,flowonly=True)
-            
-            trainDataloader = DataLoader(trainDataset, batch_size=args.batch_size,
-                                                shuffle=False, num_workers=args.worker_num)
-            trainDataiter = iter(trainDataloader)
-
+            trainDataiter = load_from_file(posefile,datastr,args.image_height,args.image_width,args.batch_size,args.worker_num,flowonly=False)
             for batch_idx, sample in enumerate(trainDataiter):
+                if iteration >= total_iterations:
+                    done = True
+                    break
                 sample = {k: v.to(device) for k, v in sample.items()} 
                 total_loss,trans_loss,rot_loss = train_pose_batch(model, optimizer, sample )
                 iteration += 1
                 scheduler.step()
-                if iteration % 10 == 0:
+                if iteration % 1 == 0:
                     summaryWriter.add_scalar('Loss/train_pose', total_loss, iteration)
                     summaryWriter.add_scalar('Loss/train_trans', trans_loss, iteration)
                     summaryWriter.add_scalar('Loss/train_rot', rot_loss, iteration)
-                    print(f"Epoch {epoch + 1}, Step {iteration}, Loss: {total_loss}")
-                    print(f"translation loss: {trans_loss}, rotation loss: {rot_loss}")
-                if iteration >= total_iterations:
-                    done = True
-                    break
+                if iteration % 10 == 0:
+                    test_total,test_trans,test_rot = validate(model, testposefiles, device)
+                    summaryWriter.add_scalar('Loss/test_pose', test_total, iteration)
+                    summaryWriter.add_scalar('Loss/test_trans', test_trans, iteration)
+                    summaryWriter.add_scalar('Loss/test_rot', test_rot, iteration) 
+                    
+        print(f"Epoch {epoch + 1}, Step {iteration}, Loss: {total_loss}")
+        print(f"translation loss: {trans_loss}, rotation loss: {rot_loss}")
         model_save_path = f'models/NORCR_POSEONLY/flowpose_model_iteration_{iteration}.pth'
         save_model(model, optimizer, scheduler, epoch, iteration, model_save_path)
         if done:

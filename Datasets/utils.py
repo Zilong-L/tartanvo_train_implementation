@@ -11,7 +11,7 @@ if ( not ( "DISPLAY" in os.environ ) ):
     plt.switch_backend('agg')
     print("Environment variable DISPLAY is not present in the system.")
     print("Switch the backend of matplotlib to agg.")
-
+from torchvision.transforms import RandomResizedCrop
 import time
 # ===== general functions =====
 
@@ -61,7 +61,22 @@ class DownscaleFlow(object):
             sample['fmask'] = cv2.resize(sample['fmask'],
                 (0, 0), fx=self.downscale, fy=self.downscale, interpolation=cv2.INTER_LINEAR)
         return sample
-
+class RandomCropAndResized(object):
+    """
+    Crop the input data at a random location and resize it to the target size
+    """
+    def __init__(self):
+        self.transform = RandomResizedCrop(size=(112, 160), scale=(0.08, 1.0), ratio=(3./4., 4./3.))
+        
+    def __call__(self, sample): 
+        # TODO: Need implementation to handle rgb images in stage two.
+        # DONE: RGB images seems to be not involved in the RCR process.
+        combined = torch.cat([sample['flow'], sample['intrinsic']], dim=0)  # Resulting shape [4, H, W]
+        transformed = self.transform(combined)  # Apply the same transform to the combined tensor
+        # Split the transformed tensor back into 'flow' and 'intrinsic'
+        sample['flow'] = transformed[:2]  # First two channels
+        sample['intrinsic'] = transformed[2:]  # Next two channels
+        return sample
 class CropCenter(object):
     """Crops the a sample of data (tuple) at center
     if the image size is not large enough, it will be first resized with fixed ratio

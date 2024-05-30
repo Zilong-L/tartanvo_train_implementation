@@ -1,7 +1,10 @@
+from cgi import test
 import torch
 import numpy as np
+from Datasets.utils import ToTensor,  CropCenter, dataset_intrinsics, DownscaleFlow, Compose,RandomCropAndResized
+from Datasets.tartanDataset import TartanDataset
 
-
+from torch.utils.data import DataLoader
 
 def train_pose_batch(model, optimizer, sample):
     model.train()
@@ -26,8 +29,18 @@ def train_pose_batch(model, optimizer, sample):
     optimizer.step()
 
     return total_loss,trans_loss,rot_loss
-
-def test_pose_batch(model, sample,pose_std_tensor):
+    
+def load_from_file(posefile,datastr,height,width,batch_size,worker_num,flowonly=True):
+    focalx, focaly, centerx, centery = dataset_intrinsics(datastr) 
+    transform = Compose([CropCenter((height,width)), DownscaleFlow(), ToTensor(),RandomCropAndResized()])
+    dataset = TartanDataset( posefile = posefile, transform=transform, 
+                                                focalx=focalx, focaly=focaly, centerx=centerx, centery=centery,flowonly=flowonly)
+            
+    dataloader= DataLoader(dataset, batch_size=batch_size,
+                                                shuffle=False, num_workers=worker_num)
+    dataloaderIter = iter(dataloader)
+    return dataloaderIter
+def test_pose_batch(model, sample):
     model.eval()
     # inputs-------------------------------------------------------------------
     flow_gt = sample['flow']
@@ -35,22 +48,23 @@ def test_pose_batch(model, sample,pose_std_tensor):
     intrinsic_gt = sample['intrinsic']
     # forward------------------------------------------------------------------
     with torch.no_grad():
+        # batch shapes are [batch_size,channels, Height,Width]
+        # So concant on dimension 1 not 0
         flow_input = torch.cat((flow_gt, intrinsic_gt), dim=1)
         relative_motion = model(flow_input)
-        relative_motion /= pose_std_tensor
         total_loss,trans_loss,rot_loss = calculate_loss(relative_motion, motions_gt)
        
-    relative_motion = relative_motion.cpu().numpy()
-    if 'motion' in sample:
-        motions_gt = sample['motion'].cpu().numpy()
-        scale = np.linalg.norm(motions_gt[:,:3], axis=1)
-        trans_est = relative_motion[:,:3]
-        trans_est = trans_est/np.linalg.norm(trans_est,axis=1).reshape(-1,1)*scale.reshape(-1,1)
-        relative_motion[:,:3] = trans_est 
-    else:
-        print('    scale is not given, using 1 as the default scale value..')
+    # relative_motion = relative_motion.cpu().numpy()
+    # if 'motion' in sample:
+    #     motions_gt = sample['motion'].cpu().numpy()
+    #     scale = np.linalg.norm(motions_gt[:,:3], axis=1)
+    #     trans_est = relative_motion[:,:3]
+    #     trans_est = trans_est/np.linalg.norm(trans_est,axis=1).reshape(-1,1)*scale.reshape(-1,1)
+    #     relative_motion[:,:3] = trans_est 
+    # else:
+    #     print('    scale is not given, using 1 as the default scale value..')
 
-    return relative_motion,total_loss,trans_loss,rot_loss
+    return total_loss,trans_loss,rot_loss
 
 
 
@@ -121,3 +135,21 @@ def load_model(model, optimizer=None, scheduler=None, filepath=""):
     epoch = checkpoint['epoch']  # 如果epoch没保存，默认值为0
     iteration = checkpoint['iteration']
     return epoch+1, iteration
+
+def validate(model, testposefiles, device ):
+    model.eval()
+    N = 0
+    total_loss,trans_loss,rot_loss = 0,0,0
+    for posefile in testposefiles:
+        posefile = posefile.strip()
+        testdataiter = load_from_file(posefile, datastr='tartanair', height=448, width=640, batch_size=100, worker_num=16)
+        for sample in testdataiter:
+            sample = {k: v.to(device) for k, v in sample.items()}
+            total,trans,rot = test_pose_batch(model, sample )
+            N += 1   
+            total_loss += total.item()  # Ensure losses are scalars, not tensors
+            trans_loss += trans.item()
+            rot_loss += rot.item()
+            
+    return total_loss/N,trans_loss/N,rot_loss/N
+            

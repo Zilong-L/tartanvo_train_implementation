@@ -8,7 +8,7 @@ from Datasets.tartanDataset import TartanDataset
 from Datasets.transformation import ses2poses_quat
 from evaluator.tartanair_evaluator import TartanAirEvaluator
 from TartanVO import TartanVO
-from utils.train_utils import train_pose_batch
+from utils.train_utils import load_model, save_model, train_pose_batch
 import argparse
 
 def get_args():
@@ -16,7 +16,7 @@ def get_args():
 
     parser.add_argument('--batch-size', type=int, default=1,
                         help='batch size (default: 1)')
-    parser.add_argument('--worker-num', type=int, default=1,
+    parser.add_argument('--worker-num', type=int, default=16,
                         help='data loader worker number (default: 1)')
     parser.add_argument('--image-width', type=int, default=640,
                         help='image width (default: 640)')
@@ -41,7 +41,13 @@ def get_args():
 
     return args
 
-
+def lr_lambda(iteration):
+        if iteration < 0.5 * total_iterations:
+            return 1.0
+        elif iteration < 0.875 * total_iterations:
+            return 0.2
+        else:
+            return 0.04
     
 if __name__ == '__main__':
 
@@ -53,25 +59,17 @@ if __name__ == '__main__':
     with open('/root/volume/code/python/tartanvo/data/pose_left_paths.txt', 'r') as f:
         posefiles = f.readlines()
 
+    iteration = 0 
+    num_epochs = 100
     learning_rate = 1e-4
-    num_epochs = 10
-    model = TartanVO().vonet
-    model.train()
-
     total_iterations = 100000
-    def lr_lambda(current_step):
-        if current_step < 0.5 * total_iterations:
-            return 1.0
-        elif current_step < 0.875 * total_iterations:
-            return 0.2
-        else:
-            return 0.04
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    
+    model = TartanVO()
+    model = torch.nn.DataParallel(model.vonet)
+    optimizer = torch.optim.Adam(model.module.flowPoseNet.parameters(), lr=learning_rate)
     scheduler = LambdaLR(optimizer, lr_lambda)
-
-    summaryWriter = SummaryWriter()
-    loss_values = []
-    current_step = 0 
+    summaryWriter = SummaryWriter('runs/exp1')
+    start_epoch,iteration = load_model(model, optimizer, scheduler, args.model_name)
 
     for epoch in range(num_epochs):
         for posefile in posefiles:
@@ -86,22 +84,21 @@ if __name__ == '__main__':
             trainDataiter = iter(trainDataloader)
 
             for batch_idx, sample in enumerate(trainDataiter):
-                total_loss,flow_loss,pose_loss,trans_loss,rot_loss = train_pose_batch(model, optimizer, sample)
-                current_step += 1
+                total_loss,flow_loss,pose_loss,trans_loss,rot_loss = train_pose_batch(model.vonet, optimizer, sample)
+                iteration += 1
                 scheduler.step()
-                if current_step % 10 == 0:
-                    summaryWriter.add_scalar('Loss/train_total', total_loss, current_step)
-                    summaryWriter.add_scalar('Loss/train_flow', flow_loss, current_step)
-                    summaryWriter.add_scalar('Loss/train_pose', pose_loss, current_step)
-                    summaryWriter.add_scalar('Loss/train_trans', trans_loss, current_step)
-                    summaryWriter.add_scalar('Loss/train_rot', rot_loss, current_step)
-                    print(f"Epoch {epoch + 1}, Step {current_step}, Loss: {total_loss}")
+                if iteration % 10 == 0:
+                    summaryWriter.add_scalar('Loss/train_total', total_loss, iteration)
+                    summaryWriter.add_scalar('Loss/train_flow', flow_loss, iteration)
+                    summaryWriter.add_scalar('Loss/train_pose', pose_loss, iteration)
+                    summaryWriter.add_scalar('Loss/train_trans', trans_loss, iteration)
+                    summaryWriter.add_scalar('Loss/train_rot', rot_loss, iteration)
+                    print(f"Epoch {epoch + 1}, Step {iteration}, Loss: {total_loss}")
                     print(f"Flow Loss: {flow_loss}")
                     print(f"Pose Loss: {pose_loss}")
 
-        model_save_path = f'mymodels/model_epoch_{epoch + 1}.pkl'
-        torch.save(model.state_dict(), model_save_path)
-        print(f"Model saved to {model_save_path}")
+        model_save_path = f'models/model_iteration_{iteration}.pth'
+        save_model(model.vonet, optimizer, scheduler, epoch, iteration, model_save_path)
 
 
         

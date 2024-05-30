@@ -42,7 +42,6 @@ class TartanVO(object):
     def __init__(self, model_name=""):
         # import ipdb;ipdb.set_trace()
         self.vonet = VONet()
-        self.vonet = torch.nn.DataParallel(self.vonet).cuda()  # Wrap the model in DataParallel
         # load the whole model
         if model_name.endswith('.pkl'):
             modelname = 'models/' + model_name

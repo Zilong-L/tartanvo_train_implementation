@@ -1,0 +1,32 @@
+# 配置文件示例
+
+# 设置批处理大小
+# 默认值为100
+batch_size = 100  
+learning_rate = 0.0001
+datastr = 'tartanair'
+
+# 数据加载工作线程数量
+worker_num = 0 
+
+# 是否只使用光流
+# 加快数据集加载速度
+# Stage 1 训练用不到RGB图像
+flow_only = true
+
+
+# 图像的宽度和高度
+image_width = 640  
+image_height = 448 
+
+# 模型名称，如果使用预训练模型请填写
+# 空字符串表示不使用预训练模型
+model_name = ""
+
+# 是否使用RCR变换
+
+total_iterations = 100000
+
+rcr_type = "CONSISTENT_RCR"
+summary_path = "runs/POSEONLY_CONSITENT_RCR"
+model_path = "models/POSEONLY_CONSISTENT_RCR"

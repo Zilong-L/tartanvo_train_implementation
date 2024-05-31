@@ -1,7 +1,5 @@
-from cgi import test
 import torch
-import numpy as np
-from Datasets.utils import ToTensor,  CropCenter, dataset_intrinsics, DownscaleFlow, Compose,RandomCropAndResized
+from Datasets.utils import ToTensor,  CropCenter, dataset_intrinsics, DownscaleFlow, Compose,RandomCropAndResized,ConsistentRandomResizedCrop
 from Datasets.tartanDataset import TartanDataset
 
 from torch.utils.data import DataLoader
@@ -23,23 +21,24 @@ def train_pose_batch(model, optimizer, sample):
 
     # backpropagation----------------------------------------------------------
     total_loss.backward()
-    max_norm = 2.0
-    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
 
     optimizer.step()
 
     return total_loss,trans_loss,rot_loss
     
-def load_from_file(posefile,datastr,height,width,batch_size,worker_num,flowonly=True):
+def load_from_file(posefile,datastr,height,width,batch_size,worker_num,flow_only=True,rcr_type="NO_RCR"):
     focalx, focaly, centerx, centery = dataset_intrinsics(datastr) 
-    transform = Compose([CropCenter((height,width)), DownscaleFlow(), ToTensor(),RandomCropAndResized()])
+    transform = Compose([CropCenter((height,width)), DownscaleFlow(), ToTensor()])
+    if rcr_type == "RCR":
+        transform = Compose([CropCenter((height,width)),DownscaleFlow(), ToTensor(),RandomCropAndResized()])
+    elif rcr_type == "CONSISTENT_RCR":
+        transform = Compose([CropCenter((height,width)),DownscaleFlow(), ToTensor(),ConsistentRandomResizedCrop()])
+        
     dataset = TartanDataset( posefile = posefile, transform=transform, 
-                                                focalx=focalx, focaly=focaly, centerx=centerx, centery=centery,flowonly=flowonly)
-            
+                                                focalx=focalx, focaly=focaly, centerx=centerx, centery=centery,flow_only=flow_only)
     dataloader= DataLoader(dataset, batch_size=batch_size,
                                                 shuffle=False, num_workers=worker_num)
-    dataloaderIter = iter(dataloader)
-    return dataloaderIter
+    return dataloader
 def test_pose_batch(model, sample):
     model.eval()
     # inputs-------------------------------------------------------------------
@@ -134,15 +133,16 @@ def load_model(model, optimizer=None, scheduler=None, filepath=""):
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     epoch = checkpoint['epoch']  # 如果epoch没保存，默认值为0
     iteration = checkpoint['iteration']
+    print(f"successfully load model from {filepath}")
     return epoch+1, iteration
 
-def validate(model, testposefiles, device ):
+def validate(model, testposefiles, device,RCR=False ):
     model.eval()
     N = 0
     total_loss,trans_loss,rot_loss = 0,0,0
     for posefile in testposefiles:
         posefile = posefile.strip()
-        testdataiter = load_from_file(posefile, datastr='tartanair', height=448, width=640, batch_size=100, worker_num=16)
+        testdataiter = load_from_file(posefile, datastr='tartanair', height=448, width=640, batch_size=100, worker_num=16,RCR=RCR)
         for sample in testdataiter:
             sample = {k: v.to(device) for k, v in sample.items()}
             total,trans,rot = test_pose_batch(model, sample )

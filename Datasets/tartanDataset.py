@@ -17,18 +17,18 @@ class TartanDataset(Dataset):
     """scene flow synthetic dataset. """
 
     def __init__(self,  posefile = None, transform = None, 
-                    focalx = 320.0, focaly = 320.0, centerx = 320.0, centery = 240.0,flowonly=False):
+                    focalx = 320.0, focaly = 320.0, centerx = 320.0, centery = 240.0,flow_only=False):
         self.focalx = focalx
         self.focaly = focaly
         self.centerx = centerx
         self.centery = centery
-        self.flowonly = flowonly
+        self.flow_only = flow_only
         
         self.transform = transform
         self.pose_std = np.array([ 0.13,  0.13,  0.13,  0.013 ,  0.013,  0.013], dtype=np.float32)
 
         rgb_dir,flow_dir = get_data_dir(posefile)
-        if not flowonly: 
+        if not flow_only: 
             rgb_files = listdir(rgb_dir)
             self.rgbfiles = [(rgb_dir +'/'+ ff) for ff in rgb_files if (ff.endswith('.png') or ff.endswith('.jpg'))]
             self.rgbfiles.sort()
@@ -37,8 +37,8 @@ class TartanDataset(Dataset):
         self.flowfiles = [(flow_dir +'/'+ ff) for ff in flow_files if ff.endswith('.npy')]
         self.flowfiles.sort()
 
-        if not flowonly: 
-            print('Find {} image files in {}'.format(len(self.rgbfiles), rgb_dir))
+        # if not flow_only: 
+        #     print('Find {} image files in {}'.format(len(self.rgbfiles), rgb_dir))
         print('Find {} flow files in {}'.format(len(self.flowfiles), flow_dir))
 
         if posefile is not None and posefile!="":
@@ -61,7 +61,7 @@ class TartanDataset(Dataset):
 
     def __getitem__(self, idx):
         res = {}
-        if not self.flowonly:
+        if not self.flow_only:
             imgfile1 = self.rgbfiles[idx].strip()
             imgfile2 = self.rgbfiles[idx+1].strip()
 

@@ -6,12 +6,14 @@ import numpy as np
 import numbers
 import cv2
 import matplotlib.pyplot as plt
+import torchvision
+from torchvision.transforms import RandomResizedCrop
+from torchvision.transforms.functional import resized_crop
 import os
 if ( not ( "DISPLAY" in os.environ ) ):
     plt.switch_backend('agg')
     print("Environment variable DISPLAY is not present in the system.")
     print("Switch the backend of matplotlib to agg.")
-from torchvision.transforms import RandomResizedCrop
 import time
 # ===== general functions =====
 
@@ -61,22 +63,8 @@ class DownscaleFlow(object):
             sample['fmask'] = cv2.resize(sample['fmask'],
                 (0, 0), fx=self.downscale, fy=self.downscale, interpolation=cv2.INTER_LINEAR)
         return sample
-class RandomCropAndResized(object):
-    """
-    Crop the input data at a random location and resize it to the target size
-    """
-    def __init__(self):
-        self.transform = RandomResizedCrop(size=(112, 160), scale=(0.08, 1.0), ratio=(3./4., 4./3.))
-        
-    def __call__(self, sample): 
-        # TODO: Need implementation to handle rgb images in stage two.
-        # DONE: RGB images seems to be not involved in the RCR process.
-        combined = torch.cat([sample['flow'], sample['intrinsic']], dim=0)  # Resulting shape [4, H, W]
-        transformed = self.transform(combined)  # Apply the same transform to the combined tensor
-        # Split the transformed tensor back into 'flow' and 'intrinsic'
-        sample['flow'] = transformed[:2]  # First two channels
-        sample['intrinsic'] = transformed[2:]  # Next two channels
-        return sample
+    
+    
 class CropCenter(object):
     """Crops the a sample of data (tuple) at center
     if the image size is not large enough, it will be first resized with fixed ratio
@@ -277,3 +265,66 @@ def load_kiiti_intrinsics(filename):
     focalx, focaly, centerx, centery = float(cam_intrinsics[0]), float(cam_intrinsics[5]), float(cam_intrinsics[2]), float(cam_intrinsics[6])
 
     return focalx, focaly, centerx, centery
+
+import torch
+import random
+import torchvision.transforms.functional as F
+
+class RandomCropAndResized(object):
+    # TODO: Implement handling for RGB images in phase two of development.
+    # DONE: RGB images are currently not included in the RandomResizedCrop (RCR) process.
+    # TODO: Consider implementing a "Consistent RandomResizedCrop" mechanism.
+    # I am not sure whether is function meets the paper's requirements. 
+    # Current implementation results in different crops even within the same scene, which may not be ideal.
+    # Consideration: Ensure the cropped region remains consistent across a single scene.
+    """
+    Crop the input data at a random location and resize it to the target size.
+    """
+    def __init__(self):
+        self.transform = RandomResizedCrop(size=(112, 160), scale=(0.08, 1.0), ratio=(3./4., 4./3.))
+        
+        
+    def __call__(self, sample): 
+        # Resulting shape [4, H, W]
+        combined = torch.cat([sample['flow'], sample['intrinsic']], dim=0)  
+        
+        # Apply the same transform to the combined tensor
+        transformed = self.transform(combined)  
+        
+        # Split the transformed tensor back into 'flow' and 'intrinsic'
+        sample['flow'] = transformed[:2]  # First two channels
+        sample['intrinsic'] = transformed[2:]  # Next two channels
+        return sample
+class ConsistentRandomResizedCrop:
+    def __init__(self):
+        self.input_size = (112,160)
+        self.min_scale = 0.4
+        self.max_scale = 1.0
+        # Initialize cropping parameters
+        self.initialize_cropping_params()
+        print("Random crop parameters: ", self.top, self.left, self.crop_height, self.crop_width)
+
+    def initialize_cropping_params(self):
+        image_size = [112, 160]
+        # Randomly determine the scale of the crop
+        scale = random.uniform(self.min_scale, self.max_scale)
+        self.crop_height = int(image_size[0] * scale)
+        self.crop_width = int(image_size[1] * scale)
+
+        # Randomly choose the top left corner of the crop area
+        self.top = random.randint(0, image_size[0] - self.crop_height)
+        self.left = random.randint(0, image_size[1] - self.crop_width)
+
+
+    def __call__(self, sample):
+        # Resulting shape [4, H, W]
+        combined = torch.cat([sample['flow'], sample['intrinsic']], dim=0)  
+        
+        # Perform the crop and resize
+        transformed = resized_crop(combined, self.top, self.left, self.crop_height, self.crop_width, self.input_size,
+                                     interpolation=torchvision.transforms.InterpolationMode.BILINEAR)
+        # Split the transformed tensor back into 'flow' and 'intrinsic'
+        sample['flow'] = transformed[:2]  # First two channels
+        sample['intrinsic'] = transformed[2:]  # Next two channels
+        return sample
+

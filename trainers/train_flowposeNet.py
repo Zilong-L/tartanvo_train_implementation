@@ -18,10 +18,9 @@ if __name__ == '__main__':
     with open(config_file, 'r') as file:
         config = toml.load(file)
         
-    with open('/root/volume/code/python/tartanvo/data/pose_left_paths.txt', 'r') as f:
-        posefiles = f.readlines()
 
     datastr = config['datastr']
+    dataset_path = config['dataset_path']
     batch_size = int(config['batch_size'])
     worker_num = int(config['worker_num'])
 
@@ -55,9 +54,10 @@ if __name__ == '__main__':
     summaryWriter = SummaryWriter(summary_path)
     start_epoch,iteration = load_model(model, optimizer, scheduler, model_name)
 
-    with open('/root/volume/code/python/tartanvo/data/test/pose_left_paths.txt', 'r') as f:
-        testposefiles = f.readlines()
+
     train_scene_dataloaders = {}
+    with open(dataset_path, 'r') as f:
+        posefiles = f.readlines()
     posefiles = [posefile.strip() for posefile in posefiles]
     for posefile in posefiles:
         train_scene_dataloaders[posefile] = load_from_file(posefile, datastr, image_height, image_width, batch_size, worker_num, flow_only=flow_only, rcr_type=rcr_type)

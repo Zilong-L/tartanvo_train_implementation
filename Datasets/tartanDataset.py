@@ -2,9 +2,9 @@ import numpy as np
 import os
 import cv2
 from torch import float32
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from os import listdir
-from .transformation import pos_quats2SEs, pose2motion, SEs2ses, pose2motion_bug
+from .transformation import pos_quats2SEs, pose2motion, SEs2ses,pose2motion_bug
 from .utils import make_intrinsics_layer
 
 def get_data_dir(scene_path):
@@ -16,44 +16,45 @@ def get_data_dir(scene_path):
 class TartanDataset(Dataset):
     """scene flow synthetic dataset. """
 
-    def __init__(self, posefile=None, transform=None, 
-                 focalx=320.0, focaly=320.0, centerx=320.0, centery=240.0, flow_only=False):
+    def __init__(self,  posefile = None, transform = None, 
+                    focalx = 320.0, focaly = 320.0, centerx = 320.0, centery = 240.0,flow_only=False):
         self.focalx = focalx
         self.focaly = focaly
         self.centerx = centerx
         self.centery = centery
         self.flow_only = flow_only
+        
         self.transform = transform
-        self.pose_std = np.array([0.13, 0.13, 0.13, 0.013, 0.013, 0.013], dtype=np.float32)
+        self.pose_std = np.array([ 0.13,  0.13,  0.13,  0.013 ,  0.013,  0.013], dtype=np.float32)
 
-        rgb_dir, flow_dir = get_data_dir(posefile)
-        
-        self.data = {'images': {}, 'flows': {}}
-        
+        rgb_dir,flow_dir = get_data_dir(posefile)
         if not flow_only: 
-            rgb_files = [os.path.join(rgb_dir, ff) for ff in listdir(rgb_dir) if (ff.endswith('.png') or ff.endswith('.jpg'))]
-            rgb_files.sort()
-            self.data['images'] = {i: cv2.imread(file) for i, file in enumerate(rgb_files)}
+            rgb_files = listdir(rgb_dir)
+            self.rgbfiles = [(rgb_dir +'/'+ ff) for ff in rgb_files if (ff.endswith('.png') or ff.endswith('.jpg'))]
+            self.rgbfiles.sort()
 
-        flow_files = [os.path.join(flow_dir, ff) for ff in listdir(flow_dir) if ff.endswith('.npy')]
-        flow_files.sort()
-        self.data['flows'] = {i: np.load(file) for i, file in enumerate(flow_files)}
-        
-        print(f'Find {len(self.data["flows"])} flow files in {flow_dir}')
+        flow_files = listdir(flow_dir)
+        self.flowfiles = [(flow_dir +'/'+ ff) for ff in flow_files if ff.endswith('.npy')]
+        self.flowfiles.sort()
 
-        if posefile is not None and posefile != "":
+        # if not flow_only: 
+        #     print('Find {} image files in {}'.format(len(self.rgbfiles), rgb_dir))
+        print('Find {} flow files in {}'.format(len(self.flowfiles), flow_dir))
+
+        if posefile is not None and posefile!="":
             poselist = np.loadtxt(posefile).astype(np.float32)
-            assert poselist.shape[1] == 7  # position + quaternion
-            poses = pos_quats2SEs(poselist)  # quats to 4x3 matrix
+            assert(poselist.shape[1]==7) # position + quaternion
+            poses = pos_quats2SEs(poselist) # quats to 4x3 matrix
             self.matrix = pose2motion(poses)
             self.motions = SEs2ses(self.matrix).astype(np.float32)
-            # normalization for training 
+            #  normalization for training 
             self.motions = self.motions / self.pose_std
-            assert len(self.motions) == len(self.data['flows'])
+            #  normalization for training  
+            assert(len(self.motions) == len(self.flowfiles))
         else:
             self.motions = None
 
-        self.N = len(self.data['flows'])
+        self.N = len(self.flowfiles)
 
     def __len__(self):
         return self.N
@@ -61,21 +62,25 @@ class TartanDataset(Dataset):
     def __getitem__(self, idx):
         res = {}
         if not self.flow_only:
-            img1 = self.data['images'][idx]
-            img2 = self.data['images'][idx + 1]
+            imgfile1 = self.rgbfiles[idx].strip()
+            imgfile2 = self.rgbfiles[idx+1].strip()
+
+            img1 = cv2.imread(imgfile1)
+            img2 = cv2.imread(imgfile2)
 
             res['img1'] = img1
             res['img2'] = img2
 
-        flow = self.data['flows'][idx]
+        flowfile = self.flowfiles[idx].strip()
+        flow = np.load(flowfile)
         res['flow'] = flow
 
         h, w, _ = flow.shape
-        intrinsic_layer = make_intrinsics_layer(w, h, self.focalx, self.focaly, self.centerx, self.centery)
-        res['intrinsic'] = intrinsic_layer
-        
+        intrinsicLayer = make_intrinsics_layer(w, h, self.focalx, self.focaly, self.centerx, self.centery)
+        res['intrinsic'] = intrinsicLayer
         if self.transform:
             res = self.transform(res)
 
         res['motion'] = self.motions[idx]
         return res
+

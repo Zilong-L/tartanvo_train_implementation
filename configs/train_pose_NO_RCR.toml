@@ -22,12 +22,12 @@ image_height = 448
 
 # 模型名称，如果使用预训练模型请填写
 # 空字符串表示不使用预训练模型
-model_name = "/root/volume/code/python/tartanvo/models/POSEONLY_NORCR/flowpose_model_iteration_41220.pth"
+model_name = "models/POSEONLY_NORCR/flowpose_model_iteration_41220.pth"
 
 # 是否使用RCR变换
 
 total_iterations = 100000
-dataset_path = "/root/volume/code/python/tartanvo/data/pose_left_paths.txt"
+dataset_path = "data/pose_left_paths.txt"
 rcr_type = "NORCR"
 summary_path = "runs/POSEONLY_NORCR"
 model_path = "models/POSEONLY_NORCR"

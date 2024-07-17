@@ -3,7 +3,7 @@ import sys
 import toml
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.tensorboard import SummaryWriter   
-
+from accelerate.logging import get_logger
 from Network.VONet import VONet
 
 from utils.train_whole_utils import load_from_file,load_model, save_model, train_whole_batch, validate
@@ -63,11 +63,11 @@ if __name__ == '__main__':
     posefiles = [posefile.strip() for posefile in posefiles]
     for posefile in posefiles:
         train_scene_dataloaders[posefile] = load_from_file(posefile, datastr, image_height, image_width, batch_size, worker_num, flow_only=flow_only, rcr_type=rcr_type)
-    
+    logger = get_logger(__name__)
     for epoch in range(start_epoch,num_epochs):
         for posefile in posefiles:
             for sample in train_scene_dataloaders[posefile]:
-                print(f"train epoch {epoch}, iteration {iteration}")
+                logger.info(f"train epoch {epoch}, iteration {iteration}", main_process_only=False)
                 if iteration >= total_iterations:
                     print(f"Successfully completed training for {iteration} iterations")
                     sys.exit()

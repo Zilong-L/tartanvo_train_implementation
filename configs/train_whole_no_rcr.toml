@@ -2,17 +2,16 @@
 
 # 设置批处理大小
 # 默认值为100
-batch_size = 100  
+batch_size = 16  
 learning_rate = 0.0001
 datastr = 'tartanair'
 
-# 数据加载工作线程数量
-worker_num = 0 
+worker_num = 8 
 
 # 是否只使用光流
 # 加快数据集加载速度
 # Stage 1 训练用不到RGB图像
-flow_only = true
+flow_only = false
 
 
 # 图像的宽度和高度
@@ -21,12 +20,12 @@ image_height = 448
 
 # 模型名称，如果使用预训练模型请填写
 # 空字符串表示不使用预训练模型
-model_name = "models/POSEONLY_RCR/flowpose_model_iteration_10992.pth"
+model_name = "models/whole_no_rcr/init.pth"
+
 # 是否使用RCR变换
 
-total_iterations = 100000
-
-rcr_type = "RCR"
+total_iterations = 50000
 dataset_path = "data/pose_left_paths.txt"
-summary_path = "runs/POSEONLY_RCR"
-model_path = "models/POSEONLY_RCR"
+rcr_type = "NORCR"
+summary_path = "runs/whole_no_rcr"
+model_path = "models/whole_no_rcr"

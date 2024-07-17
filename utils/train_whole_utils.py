@@ -67,7 +67,10 @@ def test_pose_batch(model, sample):
 
 
 
-def calculate_loss( relative_motion, motions_gt):
+def calculate_loss(relative_motion, motions_gt,flow_prediction,flow_gt,lambda_flow=0.1):
+    
+    flow_loss = torch.nn.functional.mse_loss(flow_prediction, flow_gt)
+    flow_loss = lambda_flow * flow_loss
     
     # Translation loss with normalization
     epsilon = 1e-6
@@ -85,8 +88,8 @@ def calculate_loss( relative_motion, motions_gt):
     # Overall motion loss
     pose_loss = trans_loss + rot_loss
 
-
-    return pose_loss,trans_loss,rot_loss
+    total_loss = flow_loss + pose_loss
+    return total_loss,flow_loss,pose_loss,trans_loss,rot_loss
 
 
 
@@ -127,9 +130,9 @@ def load_model(model, optimizer=None, scheduler=None, filepath=""):
         return 0,0
     checkpoint = torch.load(filepath)
     model.load_state_dict(checkpoint['model_state_dict'])
-    if optimizer is not None:
+    if optimizer is not None and 'optimizer_state_dict' in checkpoint:
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    if scheduler is not None:
+    if scheduler is not None and 'scheduler_state_dict' in checkpoint:
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     epoch = checkpoint['epoch']  # 如果epoch没保存，默认值为0
     iteration = checkpoint['iteration']

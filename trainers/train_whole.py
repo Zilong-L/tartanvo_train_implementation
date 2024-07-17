@@ -4,15 +4,17 @@ import toml
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.tensorboard import SummaryWriter   
 
-from Network.VOFlowNet import VOFlowRes as FlowPoseNet
+from Network.VONet import VONet
 
-from utils.train_pose_utils import load_from_file,load_model, save_model, train_pose_batch, validate
+from utils.train_whole_utils import load_from_file,load_model, save_model, train_whole_batch, validate
 import argparse
+
+import vo_trajectory_from_folder
 
 
 if __name__ == '__main__':
     args = argparse.ArgumentParser()
-    args.add_argument('--config',  default='configs/train_test.toml')
+    args.add_argument('--config',  default='configs/train_whole_no_rcr.toml')
     config_file = args.parse_args().config
     
     with open(config_file, 'r') as file:
@@ -47,13 +49,12 @@ if __name__ == '__main__':
     total_iterations = int(config['total_iterations'])
     learning_rate = float(config['learning_rate'] )
     
-    model = FlowPoseNet()
+    model = VONet()
     model = torch.nn.DataParallel(model).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = LambdaLR(optimizer, lr_lambda)
     summaryWriter = SummaryWriter(summary_path)
     start_epoch,iteration = load_model(model, optimizer, scheduler, model_name)
-    model = model.module
 
 
     train_scene_dataloaders = {}
@@ -62,32 +63,30 @@ if __name__ == '__main__':
     posefiles = [posefile.strip() for posefile in posefiles]
     for posefile in posefiles:
         train_scene_dataloaders[posefile] = load_from_file(posefile, datastr, image_height, image_width, batch_size, worker_num, flow_only=flow_only, rcr_type=rcr_type)
-    step = 1000
     
     for epoch in range(start_epoch,num_epochs):
         for posefile in posefiles:
             for sample in train_scene_dataloaders[posefile]:
-                if step < 10:
-                    step += 1
-                    print(f"train epoch {epoch}, iteration {iteration}")
-                    if iteration >= total_iterations:
-                        print(f"Successfully completed training for {iteration} iterations")
-                        sys.exit()
-                    sample = {k: v.to(device) for k, v in sample.items()} 
-                    total_loss,trans_loss,rot_loss = train_pose_batch(model, optimizer, sample )
-                    iteration += 1
-                    scheduler.step()
-                    if iteration % 10 == 0:
-                        summaryWriter.add_scalar('Loss/train_pose', total_loss, iteration)
-                        summaryWriter.add_scalar('Loss/train_trans', trans_loss, iteration)
-                        summaryWriter.add_scalar('Loss/train_rot', rot_loss, iteration)
-                        print(f"Epoch {epoch }, Step {iteration}, Loss: {total_loss}")
-                        print(f"translation loss: {trans_loss}, rotation loss: {rot_loss}")
-        if step >= 10:
-            break
+                print(f"train epoch {epoch}, iteration {iteration}")
+                if iteration >= total_iterations:
+                    print(f"Successfully completed training for {iteration} iterations")
+                    sys.exit()
+                sample = {k: v.to(device) for k, v in sample.items()} 
+                total_loss,flow_loss,pose_loss,trans_loss,rot_loss = train_whole_batch(model, optimizer, sample )
+                iteration += 1
+                scheduler.step()
+                if iteration % 10 == 0:
+                    summaryWriter.add_scalar('Loss/train_total', total_loss, iteration)
+                    summaryWriter.add_scalar('Loss/train_flow', flow_loss, iteration)
+                    summaryWriter.add_scalar('Loss/train_pose', pose_loss, iteration)
+                    summaryWriter.add_scalar('Loss/train_trans', trans_loss, iteration)
+                    summaryWriter.add_scalar('Loss/train_rot', rot_loss, iteration)
+                    print(f"Epoch {epoch }, Step {iteration}, Loss: {total_loss}")
+                    print(f"flow loss: {flow_loss}, pose loss: {pose_loss}")
+                    print(f"translation loss: {trans_loss}, rotation loss: {rot_loss}")
                     
-        # model_save_path = f'{model_path}/flowpose_model_iteration_{iteration}.pth'
-        # save_model(model, optimizer, scheduler, epoch, iteration, model_save_path)
+        model_save_path = f'{model_path}/{iteration}.pth'
+        save_model(model, optimizer, scheduler, epoch, iteration, model_save_path)
 
 
 

@@ -10,7 +10,7 @@ import numpy as np
 import cv2
 from os import mkdir
 from os.path import isdir
-
+from utils.train_whole_utils import load_model
 def get_args():
     parser = argparse.ArgumentParser(description='HRL')
 
@@ -36,6 +36,7 @@ def get_args():
                         help='test trajectory gt pose file, used for scale calculation, and visualization (default: "")')
     parser.add_argument('--save-flow', action='store_true', default=False,
                         help='save optical flow (default: False)')
+    parser.add_argument('--test-model-path', default='',)
 
     args = parser.parse_args()
 
@@ -46,7 +47,7 @@ if __name__ == '__main__':
     args = get_args()
 
     testvo = TartanVO(args.model_name)
-
+    load_model(testvo.vonet,filepath=args.test_model_path)
     # load trajectory data from a folder
     datastr = 'tartanair'
     if args.kitti:
@@ -76,7 +77,7 @@ if __name__ == '__main__':
         flowcount = 0
     while True:
         try:
-            sample = testDataiter.next()
+            sample = next(testDataiter)
         except StopIteration:
             break
 

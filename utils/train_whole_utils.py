@@ -129,10 +129,13 @@ def load_model(model, optimizer=None, scheduler=None, filepath=""):
     if filepath=="":
         return 0,0
     checkpoint = torch.load(filepath)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    if optimizer is not None and 'optimizer_state_dict' in checkpoint:
+    state_dict = checkpoint['model_state_dict']
+    if any(key.startswith('module.') for key in state_dict.keys()):
+        state_dict = {key[7:]: value for key, value in state_dict.items()}
+    model.load_state_dict(state_dict)
+    if optimizer is not None and 'optimizer_state_dict' in checkpoint and checkpoint['optimizer_state_dict'] is not None:
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    if scheduler is not None and 'scheduler_state_dict' in checkpoint:
+    if scheduler is not None and 'scheduler_state_dict' in checkpoint and checkpoint['scheduler_state_dict'] is not None:
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     epoch = checkpoint['epoch']  # 如果epoch没保存，默认值为0
     iteration = checkpoint['iteration']

@@ -7,3 +7,5 @@ runs/
 test.ipynb
 test.py
 build
+logs
+checkpoints

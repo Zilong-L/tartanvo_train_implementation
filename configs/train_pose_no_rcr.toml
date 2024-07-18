@@ -1,0 +1,33 @@
+# 配置文件示例
+
+# 设置批处理大小
+# 默认值为100
+batch_size = 25  
+learning_rate = 0.0001
+datastr = 'tartanair'
+
+# 数据加载工作线程数量
+# 好像0更好不知道为什么
+worker_num = 4
+
+# 是否只使用光流
+# 加快数据集加载速度
+# Stage 1 训练用不到RGB图像
+flow_only = true
+
+
+# 图像的宽度和高度
+image_width = 640  
+image_height = 448 
+
+
+
+# 是否使用RCR变换
+
+total_iterations = 100000
+dataset_path = "/dataset/data/pose_left_paths.txt"
+val_path = "/dataset/data/pose_left_paths_val.txt"
+rcr_type = "NORCR"
+summary_path = "logs/poseonly_no_rcr"
+checkpoint_path = "checkpoints/poseonly_no_rcrr"
+checkpoint = "/home/lzl/code/python/tartanvo_train_implementation/checkpoints/poseonly_no_rcrr/3206"

@@ -4,7 +4,7 @@ from Datasets.tartanDataset import TartanDataset
 from torch.utils.data import DataLoader
 from Datasets.utils import ToTensor, Compose, CropCenter, dataset_intrinsics, DownscaleFlow, plot_traj, visflow
 from Datasets.tartanTrajFlowDataset import TrajFolderDataset
-from Datasets.transformation import ses2poses_quat
+from Datasets.transformation import ses2poses_quat,se2SE
 from evaluator.tartanair_evaluator import TartanAirEvaluator
 
 from utils.train_pose_utils import test_pose_batch,load_model
@@ -48,10 +48,11 @@ def get_args():
 if __name__ == '__main__':
     args = get_args()
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    model = FlowPoseNet()
-    model = torch.nn.DataParallel(model).to(device)
-    start_epoch,iteration = load_model(model,  filepath=args.model_name)
-    print(f"Model loaded from {args.model_name}, start from epoch {start_epoch}, iteration {iteration}")
+    model = FlowPoseNet().to(device)
+    state_dict = torch.load(args.model_name)['model_state_dict']
+    state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+    model.load_state_dict(state_dict)
+    print(f"Model loaded from {args.model_name}, start from ")
     pose_std_tensor = torch.tensor(np.array([ 0.13,  0.13,  0.13,  0.013 ,  0.013,  0.013], dtype=np.float32) ).cuda()
 
     datastr = 'tartanair'
@@ -61,7 +62,7 @@ if __name__ == '__main__':
     #     posefiles = f.readlines()
     
 
-    posefile = '/root/volume/code/python/tartanvo/data/test/carwelding/Easy/P002/pose_left.txt'
+    posefile = '/dataset/data/neighborhood/Easy/P015/pose_left.txt'
     transform = Compose([CropCenter((args.image_height, args.image_width)), DownscaleFlow(), ToTensor()])
     testDataset = TartanDataset( posefile = posefile, transform=transform, 
                                         focalx=focalx, focaly=focaly, centerx=centerx, centery=centery)
@@ -73,28 +74,34 @@ if __name__ == '__main__':
     motion_gts = []
     for sample in TestDataiter:
         sample = {k: v.to(device) for k, v in sample.items()} 
-        relative_motion,total_loss,trans_loss,rot_loss = test_pose_batch(model, sample,pose_std_tensor)
+        relative_motion,total_loss,trans_loss,rot_loss = test_pose_batch(model, sample)
+        motion_gts.extend(sample['motion'].cpu().numpy())
         motionlist.extend(relative_motion)
-
-    print(f"Loss: {total_loss.item()}, translation loss: {trans_loss.item()}")
-    poselist = ses2poses_quat(np.array(motionlist))
-    positions = np.array([pose[:3] for pose in poselist])
-
+    
+    motionlist *= pose_std_tensor.cpu().numpy()
+    initial_pose = np.eye(4)
+    mostions_gt_SE = [se2SE(x) for x in motionlist]
+    poses = []
+    for motion in mostions_gt_SE:
+        initial_pose = np.matmul(initial_pose, motion)
+        poses.append(initial_pose[:3, 3])
+        
+    
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
 
-    ax.plot(positions[:, 0], positions[:, 1], positions[:, 2], label='Model Output')
-    ax.scatter(positions[0, 0], positions[0, 1], positions[0, 2], c='red', marker='o', label='Start')
-    ax.scatter(positions[-1, 0], positions[-1, 1], positions[-1, 2], c='green', marker='o', label='End')
+    # Plot each point in the list
+    for x, y, z in poses:
+        ax.scatter(x, y, z, marker='o')  # Plot each point
 
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.legend()
+    # Set labels for each axis
+    ax.set_xlabel('X Coordinate')
+    ax.set_ylabel('Y Coordinate')
+    ax.set_zlabel('Z Coordinate')
 
-    plt.title('Trajectory Without Alignment')
+    # Show the plot
     plt.show()
-
+    poselist = ses2poses_quat(np.array(motionlist))
 
     evaluator = TartanAirEvaluator()
     results = evaluator.evaluate_one_trajectory(posefile, poselist, scale=True, kittitype=(datastr=='kitti'))

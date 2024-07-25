@@ -3,8 +3,9 @@
 # 设置批处理大小
 # 默认值为100,
 # batch size = batch_size * gpu counts in ddp
-batch_size = 25
+batch_size = 16
 learning_rate = 0.0001
+lambda_flow = 0.1
 datastr = 'tartanair'
 
 # useless in ddp 
@@ -14,17 +15,17 @@ datastr = 'tartanair'
 # 加快数据集加载速度
 # Stage 1 训练用不到RGB图像
 flow_only = false
-rcr_type = "CONSISTENT_RCR"
-
+rcr_type = "RCR"
+shuffle = true
 
 # 图像的宽度和高度
 image_width = 640  
 image_height = 448 
 
 
-total_iterations = 10000
-train_path = "data/pose_left_paths_small.txt"
-val_path = "data/pose_left_paths_val.txt"
-pretrained_model_path = ""
-save_path = "checkpoints/poseonly_no_rcr"
-summary_path = "logs/poseonly_no_rcr"
+total_iterations = 2000
+train_path = "data/test.txt"
+val_path = "data/test.txt"
+pretrained_model_path = "checkpoints/whole_no_rcr/init.pth"
+save_path = "checkpoints/test"
+summary_path = "logs/test"

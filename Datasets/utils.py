@@ -281,19 +281,25 @@ class RandomCropAndResized(object):
     Crop the input data at a random location and resize it to the target size.
     """
     def __init__(self):
-        self.transform = RandomResizedCrop(size=(112, 160), scale=(0.08, 1.0), ratio=(3./4., 4./3.))
+        self.transform = RandomResizedCrop(size=(448, 640), scale=(0.08, 1.0), ratio=(3./4., 4./3.))
         
         
     def __call__(self, sample): 
-        # Resulting shape [4, H, W]
-        combined = torch.cat([sample['flow'], sample['intrinsic']], dim=0)  
-        
+        flow = torch.tensor(sample['flow']).permute(2, 0, 1)  # (H, W, 2) -> (2, H, W)
+        intrinsic = torch.tensor(sample['intrinsic']).permute(2, 0, 1)  # (H, W, 2) -> (2, H, W)
+        img1 = torch.tensor(sample['img1']).permute(2, 0, 1)  # (H, W, 3) -> (3, H, W)
+        img2 = torch.tensor(sample['img2']).permute(2, 0, 1)  # (H, W, 3) -> (3, H, W)
+        # Resulting shape [10, H, W] - 2 for flow, 2 for intrinsic, 3 for img1, and 3 for img2
+        combined = torch.cat([flow,intrinsic,img1,img2], dim=0)
+
         # Apply the same transform to the combined tensor
-        transformed = self.transform(combined)  
-        
-        # Split the transformed tensor back into 'flow' and 'intrinsic'
-        sample['flow'] = transformed[:2]  # First two channels
-        sample['intrinsic'] = transformed[2:]  # Next two channels
+        transformed = self.transform(combined)
+
+        # Split the transformed tensor back into 'flow', 'intrinsic', 'img1', and 'img2'
+        sample['flow'] = transformed[:2].permute(1, 2, 0).numpy()  # First two channels
+        sample['intrinsic'] = transformed[2:4].permute(1, 2, 0).numpy()  # Next two channels
+        sample['img1'] = transformed[4:7].permute(1, 2, 0).numpy()   # Next three channels
+        sample['img2'] = transformed[7:10].permute(1, 2, 0).numpy()   # Last three channels
         return sample
 class ConsistentRandomResizedCrop:
     def __init__(self):

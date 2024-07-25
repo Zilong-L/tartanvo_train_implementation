@@ -15,7 +15,7 @@ datastr = 'tartanair'
 # 加快数据集加载速度
 # Stage 1 训练用不到RGB图像
 flow_only = false
-rcr_type = "NORCR"
+rcr_type = "RCR"
 shuffle = true
 
 # 图像的宽度和高度
@@ -26,6 +26,6 @@ image_height = 448
 total_iterations = 50000
 train_path = "data/train_pose.txt"
 val_path = "data/val_pose.txt"
-pretrained_model_path = "checkpoints/whole_no_rcr/init.pth"
-save_path = "checkpoints/whole_no_rcr"
-summary_path = "logs/whole_no_rcr"
+pretrained_model_path = "checkpoints/whole_rcr/init.pth"
+save_path = "checkpoints/whole_rcr"
+summary_path = "logs/whole_rcr"

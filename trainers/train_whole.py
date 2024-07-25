@@ -6,7 +6,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from Network.VONet import VONet
 
-from utils.train_whole_utils import  load_checkpoint, process_sample, save_checkpoint, calculate_loss,get_loader
+from utils.train_utils import  load_checkpoint, process_whole_sample, save_checkpoint, get_loader
 import argparse
 
 
@@ -71,7 +71,7 @@ if __name__ == '__main__':
                 print(f"Successfully completed training for {iteration} iterations")
                 break
             
-            total_loss,flow_loss,pose_loss,trans_loss,rot_loss = process_sample(ddp_model,sample,lambda_flow,device_id)
+            total_loss,flow_loss,pose_loss,trans_loss,rot_loss = process_whole_sample(ddp_model,sample,lambda_flow,device_id)
             # backpropagation----------------------------------------------------------
             total_loss.backward()
             optimizer.step()
@@ -93,7 +93,7 @@ if __name__ == '__main__':
                     val_total,val_flow, val_pose, val_trans, val_rot, samplecount =0, 0, 0, 0, 0, 0
                     with torch.no_grad():
                         for sample in val_dataloader:
-                            total_loss,flow_loss,pose_loss,trans_loss,rot_loss = process_sample(ddp_model,sample,lambda_flow,device_id)
+                            total_loss,flow_loss,pose_loss,trans_loss,rot_loss = process_whole_sample(ddp_model,sample,lambda_flow,device_id)
 
                             val_total += total_loss.item()
                             val_flow += flow_loss.item()
@@ -125,8 +125,3 @@ if __name__ == '__main__':
             save_checkpoint( ddp_model, optimizer, scheduler,  iteration, model_save_path)
         
     dist.destroy_process_group()
-
-            
-
-
-

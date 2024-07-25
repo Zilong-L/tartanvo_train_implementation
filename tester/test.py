@@ -79,7 +79,7 @@ if __name__ == '__main__':
         motion_gts.extend(sample['motion'].cpu().numpy())
         motionlist.extend(relative_motion)
     
-    # motionlist *= pose_std_tensor.cpu().numpy()
+    motionlist *= pose_std_tensor.cpu().numpy()
     initial_pose = np.eye(4)
     mostions_gt_SE = [se2SE(x) for x in motionlist]
     poses = []

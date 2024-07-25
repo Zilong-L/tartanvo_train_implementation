@@ -7,11 +7,11 @@ from Datasets.tartanTrajFlowDataset import TrajFolderDataset
 from Datasets.transformation import ses2poses_quat,se2SE
 from evaluator.tartanair_evaluator import TartanAirEvaluator
 
-from utils.train_whole_utils import process_sample
 from Network.VONet import VONet
 
 import argparse
 import numpy as np
+from utils.train_utils import  load_checkpoint, process_whole_sample, save_checkpoint, get_loader
 
 
 def get_args():
@@ -76,15 +76,18 @@ if __name__ == '__main__':
     with torch.no_grad():
         for sample in TestDataiter:
             sample = {k: v.to(device) for k, v in sample.items()} 
-            # inputs-------------------------------------------------------------------
-            img1 = sample['img1']
-            img2 = sample['img2']
-            intrinsic_layer = sample['intrinsic']
-                
-            # forward------------------------------------------------------------------
-            flow, relative_motion = model([img1,img2,intrinsic_layer])
-            motion_gts.extend(sample['motion'].cpu().numpy())
-            motionlist.extend(relative_motion.cpu().numpy())
+            # # inputs-------------------------------------------------------------------
+            # img1 = sample['img1']
+            # img2 = sample['img2']
+            # intrinsic_layer = sample['intrinsic']
+            total_loss,flow_loss,pose_loss,trans_loss,rot_loss = process_whole_sample(model,sample,0.1,'cuda:0')
+            print(total_loss.item())
+
+            # # forward------------------------------------------------------------------
+            # flow, relative_motion = model([img1,img2,intrinsic_layer])
+            # motion_gts.extend(sample['motion'].cpu().numpy())
+            # motionlist.extend(relative_motion.cpu().numpy())
+            
     
     # motionlist *= pose_std_tensor.cpu().numpy()
     initial_pose = np.eye(4)

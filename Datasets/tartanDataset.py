@@ -26,6 +26,7 @@ class TartanDataset(Dataset):
         
         self.transform = transform
         self.pose_std = np.array([ 0.13,  0.13,  0.13,  0.013 ,  0.013,  0.013], dtype=np.float32)
+        self.flownorm = 20.0
 
         rgb_dir,flow_dir = get_data_dir(posefile)
         if not flow_only: 
@@ -48,9 +49,9 @@ class TartanDataset(Dataset):
             self.matrix = pose2motion(poses)
             self.motions = SEs2ses(self.matrix).astype(np.float32)
             #  normalization for training 
-            # self.motions = self.motions / self.pose_std
+            self.motions = self.motions / self.pose_std
             #  normalization for training  
-            # assert(len(self.motions) == len(self.flowfiles))
+            assert(len(self.motions) == len(self.flowfiles))
         else:
             self.motions = None
 
@@ -73,7 +74,7 @@ class TartanDataset(Dataset):
 
         flowfile = self.flowfiles[idx].strip()
         flow = np.load(flowfile)
-        res['flow'] = flow
+        res['flow'] = flow/self.flownorm
 
         h, w, _ = flow.shape
         intrinsicLayer = make_intrinsics_layer(w, h, self.focalx, self.focaly, self.centerx, self.centery)

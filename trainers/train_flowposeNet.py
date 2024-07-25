@@ -6,7 +6,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from Network.VOFlowNet import VOFlowRes as FlowPoseNet
 
-from utils.train_pose_utils import get_loaders, load_checkpoint, save_checkpoint, calculate_loss,get_loader
+from utils.train_utils import  load_checkpoint, save_checkpoint, process_flowpose_sample,get_loader
 import argparse
 
 
@@ -65,23 +65,12 @@ if __name__ == '__main__':
     while iteration < total_iterations:
         for sample in train_dataloader:
             ddp_model.train()
+            optimizer.zero_grad()  # Zero the parameter gradients
             if iteration >= total_iterations:
                 print(f"Successfully completed training for {iteration} iterations")
                 break
-            sample = {k: v.to(device_id) for k, v in sample.items()} 
-            # inputs-------------------------------------------------------------------
-            flow_gt = sample['flow']
-            intrinsic_layer = sample['intrinsic']
-            flow_input = torch.cat( ( flow_gt, intrinsic_layer ), dim=1 ) 
-
-            # forward------------------------------------------------------------------
-            optimizer.zero_grad()  # Zero the parameter gradients
-            relative_motion = ddp_model(flow_input)
-
-            # loss calculation---------------------------------------------------------
-            motions_gt = sample['motion']
-            total_loss,trans_loss,rot_loss = calculate_loss(relative_motion, motions_gt,device_id)
-
+            
+            total_loss,trans_loss,rot_loss = process_flowpose_sample(ddp_model,sample,device_id)
             # backpropagation----------------------------------------------------------
             total_loss.backward()
             optimizer.step()
@@ -100,17 +89,9 @@ if __name__ == '__main__':
                     with torch.no_grad():
                         for sample in val_dataloader:
                             sample = {k: v.to(device_id) for k, v in sample.items()} 
-                            # inputs-------------------------------------------------------------------
-                            flow_gt = sample['flow']
-                            intrinsic_layer = sample['intrinsic']
-                            flow_input = torch.cat( ( flow_gt, intrinsic_layer ), dim=1 ) 
+                            # inputs------------------------------------------------------------------- 
+                            total_loss,trans_loss,rot_loss = process_flowpose_sample(ddp_model,sample,device_id)
 
-                            # forward------------------------------------------------------------------
-                            relative_motion = ddp_model(flow_input)
-
-                            # loss calculation---------------------------------------------------------
-                            motions_gt = sample['motion']
-                            total_loss,trans_loss,rot_loss = calculate_loss(relative_motion, motions_gt,device_id)
                             val_pose += total_loss.item()
                             val_trans += trans_loss.item()
                             val_rot += rot_loss.item()
@@ -132,8 +113,3 @@ if __name__ == '__main__':
             save_checkpoint( ddp_model, optimizer, scheduler,  iteration, model_save_path)
         
     dist.destroy_process_group()
-
-            
-
-
-

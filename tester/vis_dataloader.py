@@ -9,7 +9,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from Network.VONet import VONet
 from Datasets.utils import visflow
-from utils.train_whole_utils import  load_checkpoint, process_sample, save_checkpoint, calculate_loss,get_loader
+from utils.train_utils import  load_checkpoint, process_sample, save_checkpoint, calculate_loss,get_loader
 import argparse
 import numpy as np
 

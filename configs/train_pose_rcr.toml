@@ -14,7 +14,7 @@ datastr = 'tartanair'
 # 加快数据集加载速度
 # Stage 1 训练用不到RGB图像
 flow_only = true
-rcr_type = "NORCR"
+rcr_type = "RCR"
 shuffle = true
 
 
@@ -27,5 +27,5 @@ total_iterations = 100000
 train_path = "data/train_pose.txt"
 val_path = "data/val_pose.txt"
 pretrained_model_path = ""
-save_path = "checkpoints/poseonly_no_rcr"
-summary_path = "logs/poseonly_no_rcr"
+save_path = "checkpoints/poseonly_rcr"
+summary_path = "logs/poseonly_rcr"

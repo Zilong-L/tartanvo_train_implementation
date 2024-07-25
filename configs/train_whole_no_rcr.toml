@@ -6,7 +6,7 @@ batch_size = 16
 learning_rate = 0.0001
 datastr = 'tartanair'
 
-worker_num = 8 
+worker_num = 4 
 
 # 是否只使用光流
 # 加快数据集加载速度
@@ -25,7 +25,7 @@ model_name = "models/whole_no_rcr/init.pth"
 # 是否使用RCR变换
 
 total_iterations = 50000
-dataset_path = "data/pose_left_paths.txt"
+dataset_path = "/dataset/data/pose_left_paths.txt"
 rcr_type = "NORCR"
 summary_path = "runs/whole_no_rcr"
 model_path = "models/whole_no_rcr"

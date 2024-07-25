@@ -13,9 +13,8 @@ datastr = 'tartanair'
 # 是否只使用光流
 # 加快数据集加载速度
 # Stage 1 训练用不到RGB图像
-flow_only = true
-rcr_type = "NORCR"
-shuffle = true
+flow_only = false
+rcr_type = "CONSISTENT_RCR"
 
 
 # 图像的宽度和高度
@@ -23,9 +22,9 @@ image_width = 640
 image_height = 448 
 
 
-total_iterations = 100000
-train_path = "data/train_pose.txt"
-val_path = "data/val_pose.txt"
+total_iterations = 10000
+train_path = "data/pose_left_paths_small.txt"
+val_path = "data/pose_left_paths_val.txt"
 pretrained_model_path = ""
 save_path = "checkpoints/poseonly_no_rcr"
 summary_path = "logs/poseonly_no_rcr"

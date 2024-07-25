@@ -7,7 +7,7 @@ from Datasets.tartanTrajFlowDataset import TrajFolderDataset
 from Datasets.transformation import ses2poses_quat,se2SE
 from evaluator.tartanair_evaluator import TartanAirEvaluator
 
-from utils.train_pose_utils import test_pose_batch,load_model
+from utils.train_pose_utils import test_pose_batch,load_checkpoint
 from Network.VOFlowNet import VOFlowRes as FlowPoseNet
 
 import argparse
@@ -45,6 +45,7 @@ def get_args():
     return args
 
 
+# FIXME: change model_name with --and testing pose file arguments 
 if __name__ == '__main__':
     args = get_args()
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -61,8 +62,8 @@ if __name__ == '__main__':
     # with open('/root/volume/code/python/tartanvo/data/pose_left_paths.txt', 'r') as f:
     #     posefiles = f.readlines()
     
-
-    posefile = '/dataset/data/neighborhood/Easy/P015/pose_left.txt'
+    #FIXME: change pose file here
+    posefile = args.pose_file
     transform = Compose([CropCenter((args.image_height, args.image_width)), DownscaleFlow(), ToTensor()])
     testDataset = TartanDataset( posefile = posefile, transform=transform, 
                                         focalx=focalx, focaly=focaly, centerx=centerx, centery=centery)
@@ -78,7 +79,7 @@ if __name__ == '__main__':
         motion_gts.extend(sample['motion'].cpu().numpy())
         motionlist.extend(relative_motion)
     
-    motionlist *= pose_std_tensor.cpu().numpy()
+    # motionlist *= pose_std_tensor.cpu().numpy()
     initial_pose = np.eye(4)
     mostions_gt_SE = [se2SE(x) for x in motionlist]
     poses = []

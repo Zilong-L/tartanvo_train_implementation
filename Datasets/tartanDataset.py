@@ -39,7 +39,7 @@ class TartanDataset(Dataset):
 
         # if not flow_only: 
         #     print('Find {} image files in {}'.format(len(self.rgbfiles), rgb_dir))
-        print('Find {} flow files in {}'.format(len(self.flowfiles), flow_dir))
+        # print('Find {} flow files in {}'.format(len(self.flowfiles), flow_dir))
 
         if posefile is not None and posefile!="":
             poselist = np.loadtxt(posefile).astype(np.float32)
@@ -48,13 +48,13 @@ class TartanDataset(Dataset):
             self.matrix = pose2motion(poses)
             self.motions = SEs2ses(self.matrix).astype(np.float32)
             #  normalization for training 
-            self.motions = self.motions / self.pose_std
+            # self.motions = self.motions / self.pose_std
             #  normalization for training  
-            assert(len(self.motions) == len(self.flowfiles))
+            # assert(len(self.motions) == len(self.flowfiles))
         else:
             self.motions = None
 
-        self.N = len(self.flowfiles)
+        self.N = len(self.motions)
 
     def __len__(self):
         return self.N

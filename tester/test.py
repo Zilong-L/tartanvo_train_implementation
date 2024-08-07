@@ -7,7 +7,7 @@ from Datasets.tartanTrajFlowDataset import TrajFolderDataset
 from Datasets.transformation import ses2poses_quat,se2SE
 from evaluator.tartanair_evaluator import TartanAirEvaluator
 
-from utils.train_pose_utils import test_pose_batch,load_checkpoint
+from utils.train_utils import test_pose_batch,load_checkpoint
 from Network.VOFlowNet import VOFlowRes as FlowPoseNet
 
 import argparse
@@ -73,11 +73,22 @@ if __name__ == '__main__':
     TestDataiter =  iter(testDataloader)
     motionlist = []
     motion_gts = []
-    for sample in TestDataiter:
-        sample = {k: v.to(device) for k, v in sample.items()} 
-        relative_motion,total_loss,trans_loss,rot_loss = test_pose_batch(model, sample)
-        motion_gts.extend(sample['motion'].cpu().numpy())
-        motionlist.extend(relative_motion)
+    model.eval()
+    with torch.no_grad():
+        for sample in TestDataiter:
+            sample = {k: v.to(device) for k, v in sample.items()} 
+            relative_motion,total_loss,trans_loss,rot_loss = test_pose_batch(model, sample)
+            motion_gts.extend(sample['motion'].cpu().numpy())
+            print(total_loss)
+            motions_gt = sample['motion'].cpu().numpy()
+            
+            posenp = np.array(relative_motion)
+            scale = np.linalg.norm(motions_gt[:,:3], axis=1)
+            trans_est = posenp[:,:3]
+            trans_est = trans_est/np.linalg.norm(trans_est,axis=1).reshape(-1,1)*scale.reshape(-1,1)
+            posenp[:,:3] = trans_est 
+            motionlist.extend(posenp)
+            
     
     motionlist *= pose_std_tensor.cpu().numpy()
     initial_pose = np.eye(4)

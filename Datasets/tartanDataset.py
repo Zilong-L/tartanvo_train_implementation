@@ -38,8 +38,6 @@ class TartanDataset(Dataset):
         self.flowfiles = [(flow_dir +'/'+ ff) for ff in flow_files if ff.endswith('.npy')]
         self.flowfiles.sort()
 
-        # if not flow_only: 
-        #     print('Find {} image files in {}'.format(len(self.rgbfiles), rgb_dir))
         # print('Find {} flow files in {}'.format(len(self.flowfiles), flow_dir))
 
         if posefile is not None and posefile!="":

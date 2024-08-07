@@ -4,13 +4,12 @@ from Datasets.tartanTrajFlowDataset import TrajFolderDataset
 from Datasets.transformation import ses2poses_quat
 from evaluator.tartanair_evaluator import TartanAirEvaluator
 from TartanVO import TartanVO
-
+from utils.train_utils import calculate_pose_loss
 import argparse
 import numpy as np
 import cv2
 from os import mkdir
 from os.path import isdir
-from utils.train_whole_utils import load_model
 def get_args():
     parser = argparse.ArgumentParser(description='HRL')
 
@@ -47,7 +46,6 @@ if __name__ == '__main__':
     args = get_args()
 
     testvo = TartanVO(args.model_name)
-    load_model(testvo.vonet,filepath=args.test_model_path)
     # load trajectory data from a folder
     datastr = 'tartanair'
     if args.kitti:
@@ -70,6 +68,7 @@ if __name__ == '__main__':
 
     motionlist = []
     testname = datastr + '_' + args.model_name.split('.')[0]
+    testvo.vonet.eval()
     if args.save_flow:
         flowdir = 'results/'+testname+'_flow'
         if not isdir(flowdir):
@@ -83,7 +82,8 @@ if __name__ == '__main__':
 
         motions, flow = testvo.test_batch(sample)
         motionlist.extend(motions)
-
+        # total_loss,trans_loss,rot_loss = calculate_pose_loss(motions, sample['motion'])
+        # print(total_loss)
         if args.save_flow:
             for k in range(flow.shape[0]):
                 flowk = flow[k].transpose(1,2,0)

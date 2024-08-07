@@ -38,7 +38,7 @@ class PWCDCNet(nn.Module):
 
         """
         super(PWCDCNet,self).__init__()
-
+        self.criterion = nn.L1Loss()
         self.flow_norm = flow_norm
         
         self.conv1a  = conv(3,   16, kernel_size=3, stride=2)
@@ -259,8 +259,99 @@ class PWCDCNet(nn.Module):
         x = self.dc_conv4(self.dc_conv3(self.dc_conv2(self.dc_conv1(x))))
         flow2 = flow2 + self.dc_conv7(self.dc_conv6(self.dc_conv5(x)))
         
-        return flow2
+        if self.training:
+            return flow2,flow3,flow4,flow5,flow6
+        else:
+            return flow2
 
+    def scale_targetflow(self, targetflow, small_scale=False):
+        '''
+        calculte GT flow in different scales 
+        '''
+        if small_scale:
+            target4 = targetflow
+        else:
+            target4 = F.interpolate(targetflow, scale_factor=0.25, mode='bilinear', align_corners=True) #/4.0
+        target8 = F.interpolate(target4, scale_factor=0.5, mode='bilinear', align_corners=True) #/2.0
+        target16 = F.interpolate(target8, scale_factor=0.5, mode='bilinear', align_corners=True) #/2.0
+        target32 = F.interpolate(target16, scale_factor=0.5, mode='bilinear', align_corners=True) #/2.0
+        target64 = F.interpolate(target32, scale_factor=0.5, mode='bilinear', align_corners=True) #/2.0
+        return (target4, target8, target16, target32, target64)
+
+    def scale_mask(self, mask, threshold=128, small_scale=False):
+        '''
+        in tarranair, 
+        mask=0:   Valid
+        mask=1:   CROSS_OCC
+        mask=10:  SELF_OCC
+        mask=100: OUT_OF_FOV
+        '''
+        if small_scale:
+            mask4 = mask
+        else:
+            mask4 = F.interpolate(mask, scale_factor=0.25, mode='bilinear', align_corners=True) #/4.0
+        mask8 = F.interpolate(mask4, scale_factor=0.5, mode='bilinear', align_corners=True) #/2.0
+        mask16 = F.interpolate(mask8, scale_factor=0.5, mode='bilinear', align_corners=True) #/2.0
+        mask32 = F.interpolate(mask16, scale_factor=0.5, mode='bilinear', align_corners=True) #/2.0
+        mask64 = F.interpolate(mask32, scale_factor=0.5, mode='bilinear', align_corners=True) #/2.0
+        mask4 = mask4<threshold
+        mask8 = mask8<threshold
+        mask16 = mask16<threshold
+        mask32 = mask32<threshold
+        mask64 = mask64<threshold
+        return (mask4, mask8, mask16, mask32, mask64)
+
+    def get_loss(self, output, target,  small_scale=False):
+        '''
+        return flow loss
+        '''
+        criterion = self.criterion
+        if self.training:
+            target4, target8, target16, target32, target64 = self.scale_targetflow(target, small_scale)
+            loss1 = criterion(output[0], target4)
+            loss2 = criterion(output[1], target8)
+            loss3 = criterion(output[2], target16)
+            loss4 = criterion(output[3], target32)
+            loss5 = criterion(output[4], target64)
+            loss = (loss1 + loss2 + loss3 + loss4 + loss5)/5.0
+        else:
+            if small_scale:
+                output4 = output[0]
+            else:
+                output4 = F.interpolate(output[0], scale_factor=4, mode='bilinear', align_corners=True)# /4.0
+            loss = criterion(output4, target)
+        return loss
+
+
+    def get_loss_w_mask(self, output, target, criterion, mask, small_scale=False):
+        '''
+        return flow loss
+        small_scale: True - the target and mask are of the same size with output
+                     False - the target and mask are of 4 time size of the output
+        '''
+        if self.training: # PWCNet + training
+            target4, target8, target16, target32, target64 = self.scale_targetflow(target, small_scale)
+            mask4, mask8, mask16, mask32, mask64 = self.scale_mask(mask, small_scale=small_scale) # only consider coss occlution which indicates moving objects
+            mask4 = mask4.expand(target4.shape)
+            mask8 = mask8.expand(target8.shape)
+            mask16 = mask16.expand(target16.shape)
+            mask32 = mask32.expand(target32.shape)
+            mask64 = mask64.expand(target64.shape)
+            loss1 = criterion(output[0][mask4], target4[mask4])
+            loss2 = criterion(output[1][mask8], target8[mask8])
+            loss3 = criterion(output[2][mask16], target16[mask16])
+            loss4 = criterion(output[3][mask32], target32[mask32])
+            loss5 = criterion(output[4][mask64], target64[mask64])
+            loss = (loss1 + loss2 + loss3 + loss4 + loss5)/5.0
+        else:
+            if small_scale:
+                output4 = output[0]
+            else:
+                output4 = F.interpolate(output[0], scale_factor=4, mode='bilinear', align_corners=True)# /4.0
+            valid_mask = mask < 10
+            valid_mask = valid_mask.expand(target.shape)
+            loss = criterion(output4[valid_mask], target[valid_mask])
+        return loss
 
 def pwc_dc_net(path=None):
 
@@ -275,4 +366,29 @@ def pwc_dc_net(path=None):
 
 
 
+if __name__ == '__main__':
+    
+    flownet = PWCDCNet()
+    flownet.cuda()
+    print(flownet)
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import time
+    np.set_printoptions(precision=4, threshold=100000)
+    image_width = 512
+    image_height = 384
+    x, y = np.ogrid[:image_width, :image_height]
+    # print x, y, (x+y)
+    img = np.repeat((x + y)[..., np.newaxis], 3, 2) / float(image_width + image_height)
+    img = img.astype(np.float32)
+    print(img.dtype)
 
+    imgInput = img[np.newaxis,...].transpose(0, 3, 1, 2)
+    imgTensor = torch.from_numpy(imgInput)
+    start_time = time.time()
+    # for k in range(100):
+    import ipdb;ipdb.set_trace()
+    z = flownet([imgTensor.cuda(),imgTensor.cuda()])
+    # print z[0].data.cpu().numpy().shape
+    print(z[0].data.cpu().numpy())
+        # print time.time() - start_time

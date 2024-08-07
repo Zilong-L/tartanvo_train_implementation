@@ -270,6 +270,103 @@ import torch
 import random
 import torchvision.transforms.functional as F
 
+class RandomResizeCrop(object):
+    """
+    Random scale to cover continuous focal length
+    Due to the tartanair focal is already small, we only up scale the image
+
+    """
+
+    def __init__(self, size, max_scale=2.5, keep_center=False, fix_ratio=False, scale_disp=False):
+        '''
+        size: output frame size, this should be NO LARGER than the input frame size! 
+        scale_disp: when training the stereovo, disparity represents depth, which is not scaled with resize 
+        '''
+        if isinstance(size, numbers.Number):
+            self.target_h = int(size)
+            self.target_w = int(size)
+        else:
+            self.target_h = size[0]
+            self.target_w = size[1]
+
+        # self.max_focal = max_focal
+        self.keep_center = keep_center
+        self.fix_ratio = fix_ratio
+        self.scale_disp = scale_disp
+        # self.tartan_focal = 320.
+
+        # assert self.max_focal >= self.tartan_focal
+        self.scale_base = max_scale #self.max_focal /self.tartan_focal
+
+    def __call__(self, sample): 
+        for kk in sample:
+            if len(sample[kk].shape)>=2:
+                h, w = sample[kk].shape[0], sample[kk].shape[1]
+                break
+        self.target_h = min(self.target_h, h)
+        self.target_w = min(self.target_w, w)
+
+        scale_w, scale_h, x1, y1, crop_w, crop_h = generate_random_scale_crop(h, w, self.target_h, self.target_w, 
+                                                    self.scale_base, self.keep_center, self.fix_ratio)
+
+        for kk in sample:
+            # if kk in ['flow', 'flow2', 'img0', 'img0n', 'img1', 'img1n', 'intrinsic', 'fmask', 'disp0', 'disp1', 'disp0n', 'disp1n']:
+            if len(sample[kk].shape)>=2 or kk in ['fmask', 'fmask2']:
+                sample[kk] = sample[kk][y1:y1+crop_h, x1:x1+crop_w]
+                sample[kk] = cv2.resize(sample[kk], (0,0), fx=scale_w, fy=scale_h, interpolation=cv2.INTER_LINEAR)
+                # Note opencv reduces the last dimention if it is one
+                sample[kk] = sample[kk][:self.target_h,:self.target_w]
+
+        # scale the flow
+        if 'flow' in sample:
+            sample['flow'][:,:,0] = sample['flow'][:,:,0] * scale_w
+            sample['flow'][:,:,1] = sample['flow'][:,:,1] * scale_h
+        # scale the flow
+        if 'flow2' in sample:
+            sample['flow2'][:,:,0] = sample['flow2'][:,:,0] * scale_w
+            sample['flow2'][:,:,1] = sample['flow2'][:,:,1] * scale_h
+
+        if self.scale_disp: # scale the depth
+            if 'disp0' in sample:
+                sample['disp0'][:,:] = sample['disp0'][:,:] * scale_w
+            if 'disp1' in sample:
+                sample['disp1'][:,:] = sample['disp1'][:,:] * scale_w
+            if 'disp0n' in sample:
+                sample['disp0n'][:,:] = sample['disp0n'][:,:] * scale_w
+            if 'disp1n' in sample:
+                sample['disp1n'][:,:] = sample['disp1n'][:,:] * scale_w
+        else:
+            sample['scale_w'] = np.array([scale_w ])# used in e2e-stereo-vo
+
+        return sample
+def generate_random_scale_crop(h, w, target_h, target_w, scale_base, keep_center, fix_ratio):
+    '''
+    Randomly generate scale and crop params
+    H: input image h
+    w: input image w
+    target_h: output image h
+    target_w: output image w
+    scale_base: max scale up rate
+    keep_center: crop at center
+    fix_ratio: scale_h == scale_w
+    '''
+    scale_w = random.random() * (scale_base - 1) + 1
+    if fix_ratio:
+        scale_h = scale_w
+    else:
+        scale_h = random.random() * (scale_base - 1) + 1
+
+    crop_w = int(math.ceil(target_w/scale_w)) # ceil for redundancy
+    crop_h = int(math.ceil(target_h/scale_h)) # crop_w * scale_w > w
+
+    if keep_center:
+        x1 = int((w-crop_w)/2)
+        y1 = int((h-crop_h)/2)
+    else:
+        x1 = random.randint(0, w - crop_w)
+        y1 = random.randint(0, h - crop_h)
+
+    return scale_w, scale_h, x1, y1, crop_w, crop_h
 class RandomCropAndResized(object):
     # TODO: Implement handling for RGB images in phase two of development.
     # DONE: RGB images are currently not included in the RandomResizedCrop (RCR) process.
@@ -300,6 +397,32 @@ class RandomCropAndResized(object):
         sample['intrinsic'] = transformed[2:4].permute(1, 2, 0).numpy()  # Next two channels
         sample['img1'] = transformed[4:7].permute(1, 2, 0).numpy()   # Next three channels
         sample['img2'] = transformed[7:10].permute(1, 2, 0).numpy()   # Last three channels
+        return sample
+class RandomCropAndResizedFlow(object):
+    # TODO: Implement handling for RGB images in phase two of development.
+    # DONE: RGB images are currently not included in the RandomResizedCrop (RCR) process.
+    # TODO: Consider implementing a "Consistent RandomResizedCrop" mechanism.
+    # I am not sure whether is function meets the paper's requirements. 
+    # Current implementation results in different crops even within the same scene, which may not be ideal.
+    # Consideration: Ensure the cropped region remains consistent across a single scene.
+    """
+    Crop the input data at a random location and resize it to the target size.
+    """
+    def __init__(self):
+        self.transform = RandomResizedCrop(size=(448, 640), scale=(0.08, 1.0), ratio=(3./4., 4./3.))
+        
+        
+    def __call__(self, sample): 
+        flow = torch.tensor(sample['flow']).permute(2, 0, 1)  # (H, W, 2) -> (2, H, W)
+        intrinsic = torch.tensor(sample['intrinsic']).permute(2, 0, 1)  # (H, W, 2) -> (2, H, W)
+        combined = torch.cat([flow,intrinsic], dim=0)
+
+        # Apply the same transform to the combined tensor
+        transformed = self.transform(combined)
+
+        # Split the transformed tensor back into 'flow', 'intrinsic', 'img1', and 'img2'
+        sample['flow'] = transformed[:2].permute(1, 2, 0).numpy()  # First two channels
+        sample['intrinsic'] = transformed[2:4].permute(1, 2, 0).numpy()  # Next two channels
         return sample
 class ConsistentRandomResizedCrop:
     def __init__(self):

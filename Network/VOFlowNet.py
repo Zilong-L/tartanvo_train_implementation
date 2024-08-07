@@ -106,7 +106,7 @@ class VOFlowRes(nn.Module):
 
         self.voflow_trans = nn.Sequential(fc1_trans, fc2_trans, fc3_trans)
         self.voflow_rot = nn.Sequential(fc1_rot, fc2_rot, fc3_rot)
-
+        self.criterion = nn.L1Loss()
 
     def _make_layer(self, block, planes, blocks, stride, pad, dilation):
         downsample = None
@@ -134,3 +134,21 @@ class VOFlowRes(nn.Module):
         x_trans = self.voflow_trans(x)
         x_rot = self.voflow_rot(x)
         return torch.cat((x_trans, x_rot), dim=1)
+    
+    def linear_norm_trans_loss(self, output, motion, mask=None):
+        output_trans = output[:, :3]
+        output_rot = output[:, 3:]
+
+        trans_norm = torch.norm(output_trans, dim=1).view(-1, 1)
+        output_norm = output_trans/trans_norm
+
+        if mask is None:
+            trans_loss = self.criterion(output_norm, motion[:, :3])
+            rot_loss = self.criterion(output_rot, motion[:, 3:])
+        else:
+            trans_loss = self.criterion(output_norm[mask,:], motion[mask, :3])
+            rot_loss = self.criterion(output_rot[mask,:], motion[mask, 3:])
+
+        loss = (rot_loss + trans_loss)/2.0
+
+        return loss, trans_loss.item() , rot_loss.item()

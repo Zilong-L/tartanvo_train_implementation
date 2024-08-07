@@ -46,7 +46,10 @@ class VONet(nn.Module):
     def forward(self, x):
         # import ipdb;ipdb.set_trace()
         flow = self.flowNet(x[0:2])
-        flow_input = torch.cat( ( flow, x[2] ), dim=1 )        
+        if self.training:
+            flow_input = torch.cat( ( flow[0], x[2] ), dim=1 )        
+        else:
+            flow_input = torch.cat( ( flow, x[2] ), dim=1 )        
         pose = self.flowPoseNet( flow_input )
 
         return flow, pose

@@ -26,6 +26,6 @@ image_height = 448
 total_iterations = 2000
 train_path = "data/test.txt"
 val_path = "data/test.txt"
-pretrained_model_path = "checkpoints/whole_no_rcr/init.pth"
+pretrained_model_path = "checkpoints/whole_rcr/init.pth"
 save_path = "checkpoints/test"
 summary_path = "logs/test"

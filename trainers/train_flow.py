@@ -6,9 +6,9 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from Network.VONet import VONet
 
-from utils.train_utils import  load_checkpoint, process_whole_sample, save_checkpoint, get_loader
+from utils.train_utils import  load_checkpoint, process_flow_sample, save_checkpoint, get_loader
 import argparse
-
+from Network.PWC import PWCDCNet as FlowNet
 
 if __name__ == '__main__':
     args = argparse.ArgumentParser()
@@ -50,7 +50,7 @@ if __name__ == '__main__':
     iteration = 0 
     torch.cuda.set_device(rank)
     torch.cuda.empty_cache()
-    model = VONet().to(device_id)
+    model = FlowNet().to(device_id)
     ddp_model = DDP(model, device_ids=[device_id],find_unused_parameters=True)
     map_location = {'cuda:%d' % 0: 'cuda:%d' % rank}
 
@@ -61,7 +61,7 @@ if __name__ == '__main__':
 
 
     train_dataloader = get_loader(train_path, datastr,image_height,image_width, batch_size, flow_only=flow_only, rcr_type=rcr_type,shuffle=shuffle,rank=rank,world_size=dist.get_world_size())
-    # val_dataloader = get_loader(val_path, datastr,image_height,image_width, batch_size, flow_only=flow_only, rcr_type=rcr_type,shuffle=shuffle,rank=rank,world_size=dist.get_world_size())
+    val_dataloader = get_loader(val_path, datastr,image_height,image_width, batch_size, flow_only=flow_only, rcr_type=rcr_type,shuffle=shuffle,rank=rank,world_size=dist.get_world_size())
 
     while iteration < total_iterations:
         for sample in train_dataloader:
@@ -71,7 +71,7 @@ if __name__ == '__main__':
                 print(f"Successfully completed training for {iteration} iterations")
                 break
             
-            total_loss,flow_loss,pose_loss,trans_loss,rot_loss = process_whole_sample(ddp_model,sample,lambda_flow,device_id)
+            total_loss = process_flow_sample(ddp_model,sample,lambda_flow,device_id)
             # backpropagation----------------------------------------------------------
             total_loss.backward()
             optimizer.step()
@@ -81,12 +81,7 @@ if __name__ == '__main__':
             if rank == 0:
                 if iteration % 10 == 0:
                     summaryWriter.add_scalar('Loss/train_total', total_loss, iteration)
-                    summaryWriter.add_scalar('Loss/train_flow', flow_loss, iteration)
-                    summaryWriter.add_scalar('Loss/train_pose', pose_loss, iteration)
-                    summaryWriter.add_scalar('Loss/train_trans', trans_loss, iteration)
-                    summaryWriter.add_scalar('Loss/train_rot', rot_loss, iteration)
-                    print(f"Step {iteration}, Loss: {total_loss}, flow:{flow_loss}, pose:{pose_loss}")
-                    print(f"translation loss: {trans_loss}, rotation loss: {rot_loss}")
+                    print(f"Step {iteration}, Loss: {total_loss}")
                     
                 # if iteration % 500 == 0:
                 #     ddp_model.eval()

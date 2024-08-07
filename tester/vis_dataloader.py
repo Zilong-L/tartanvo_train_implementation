@@ -9,13 +9,14 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from Network.VONet import VONet
 from Datasets.utils import visflow
-from utils.train_utils import  load_checkpoint, process_sample, save_checkpoint, calculate_loss,get_loader
+from utils.train_utils import  load_checkpoint, get_loader
 import argparse
 import numpy as np
+from Network.PWC import PWCDCNet as FlowNet
 
 if __name__ == '__main__':
     args = argparse.ArgumentParser()
-    args.add_argument('--config',  default='configs/flowpose_overfit.toml')
+    args.add_argument('--config',  default='configs/train_whole_rcr_lambda_1.toml')
     config_file = args.parse_args().config
     
     with open(config_file, 'r') as file:
@@ -53,7 +54,7 @@ if __name__ == '__main__':
     iteration = 0 
     torch.cuda.set_device(rank)
     torch.cuda.empty_cache()
-    model = VONet().to(device_id)
+    model = FlowNet().to(device_id)
     ddp_model = DDP(model, device_ids=[device_id],find_unused_parameters=True)
     map_location = {'cuda:%d' % 0: 'cuda:%d' % rank}
     
@@ -66,27 +67,36 @@ if __name__ == '__main__':
     train_dataloader = get_loader(train_path, datastr,image_height,image_width, batch_size, flow_only=flow_only, rcr_type=rcr_type,shuffle=shuffle,rank=rank,world_size=dist.get_world_size())
     val_dataloader = get_loader(val_path, datastr,image_height,image_width, batch_size, flow_only=flow_only, rcr_type=rcr_type,shuffle=shuffle,rank=rank,world_size=dist.get_world_size())
 
-    if rank == 0:
+if rank == 0:
+    with torch.no_grad():
         for sample in train_dataloader:
-            flow = sample['flow']
+            flow_gt = sample['flow']
             img1 = sample['img1']
             img2 = sample['img2']
-            for img1,img2,flow_uv in zip(img1,img2,flow):
-                flow_uv_np = flow_uv.permute(1, 2, 0).numpy()
-    
-                flow_color = flow_vis.flow_to_color(flow_uv_np, convert_to_bgr=False)
+            img1 = img1.to(device_id)
+            img2 = img2.to(device_id)
+            flow = ddp_model([img1, img2])
+            for img1, img2, flow_uv,flow_gt_uv in zip(img1, img2, flow,flow_gt):
+                
                 
                 # Convert image tensor to numpy array and ensure it's in the correct format
-                img1_np = img1.permute(1, 2, 0).numpy()
+                img1_np = img1.permute(1, 2, 0).cpu().numpy()
                 img1_np = (img1_np * 255).astype(np.uint8)  # Assuming the image tensor is normalized [0, 1]
-                img2_np = img2.permute(1, 2, 0).numpy()
+                img2_np = img2.permute(1, 2, 0).cpu().numpy()
                 img2_np = (img2_np * 255).astype(np.uint8)  # Assuming the image tensor is normalized [0, 1]
                 
+                flow_np = flow_uv.permute(1, 2, 0).cpu().detach().numpy()
+                
+                # Convert flow to color
+                flow_color = flow_vis.flow_to_color(flow_np, convert_to_bgr=False)
+                flow_gt_uv_np = flow_gt_uv.permute(1, 2, 0).cpu().detach().numpy()
+                flow_gt_color = flow_vis.flow_to_color(flow_gt_uv_np, convert_to_bgr=False)
+                
                 # Display the images using OpenCV
-                cv2.imshow('img2', img2_np)
-                # Display the images using OpenCV
-                cv2.imshow('flow', flow_color)
                 cv2.imshow('img1', img1_np)
+                cv2.imshow('img2', img2_np)
+                cv2.imshow('flow', flow_color)
+                cv2.imshow('flow_gt', flow_gt_color)
                 cv2.waitKey(0)
-        
-   
+            
+    

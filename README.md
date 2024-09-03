@@ -1,47 +1,5 @@
-# To run this repo
-Sorry I didn't have a complete running routine for this repo. I will try to update this README when issue raised.
+# Docs
 
-
-## Recreate the Environment
-
-When you want to recreate the environment on another system or after a fresh installation, follow these steps:
-
-### 1. Create the Conda environment from the `environment.yml` file:
-
-```bash
-conda env create -f environment.yml
-```
-This will create a new Conda environment based on the packages listed in the environment.yml.
-
-### 2. Activate the newly created environment
-```bash
-conda activate my_env
-```
-Replace my_env with the actual name of the environment specified in the environment.yml.
-
-### 3. Install the pip packages from `requirements.txt`
-```
-pip install -r requirements.txt
-```
-This installs the additional pip packages into the same environment.
-
-## Set up pose files
-The pose files are stored in the `data` folder. And you can run `utils/list_files.py` to generate the pose files. 
-```
-python utils/list_files.py
-```
-This will generate the pose files for a dataset and you can get something like this.
-```
-/home/lzl/code/python/tartanvo_train_implementation/data/abandonedfactory/Hard/P009/pose_left.txt
-/home/lzl/code/python/tartanvo_train_implementation/data/abandonedfactory/Easy/P005/pose_left.txt
-/home/lzl/code/python/tartanvo_train_implementation/data/abandonedfactory/Easy/P011/pose_left.txt
-```
-
-## Run training code
-use the following command to run the training code
-```
-torchrun --master_port=31467 --nproc_per_node=4 trainers/train_flow.py --config configs/flowtest.toml
-```
 
 # TartanVO: A Generalizable Learning-based VO
 

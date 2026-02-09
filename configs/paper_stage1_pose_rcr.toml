@@ -1,0 +1,37 @@
+# Paper (TartanVO, arXiv:2011.00359) training config
+# Stage 1: train pose network P_phi using GT optical flow + GT motion.
+#
+# Paper settings:
+# - iterations: 100,000
+# - batch size: 100 (trained on 4 GPUs)
+# - lr: 1e-4, decay x0.2 at 1/2 and 7/8 of total steps
+# - RCR augmentation applied (Sec. 3.4.2)
+#
+# NOTE: In this repo's DDP trainers, `batch_size` is PER-GPU.
+# With `torchrun --nproc_per_node=4`, batch_size=25 => global batch size 100.
+
+batch_size = 25
+learning_rate = 0.0001
+datastr = 'tartanair'
+
+# Stage 1 does not use RGB images.
+flow_only = true
+
+# Random Crop and Resize augmentation (RCR).
+rcr_type = "RCR"
+shuffle = true
+
+# Paper uses 640x448 (multiple of 64 for PWC-Net).
+image_width = 640
+image_height = 448
+
+total_iterations = 100000
+train_path = "data/train_pose.txt"
+val_path = "data/val_pose.txt"
+
+# Leave empty to train from scratch; set to a .pth to resume.
+pretrained_model_path = ""
+
+save_path = "checkpoints/paper_stage1_pose_rcr"
+summary_path = "logs/paper_stage1_pose_rcr"
+

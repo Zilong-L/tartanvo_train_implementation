@@ -3,25 +3,58 @@ from Datasets.utils import ToTensor,  CropCenter, dataset_intrinsics, DownscaleF
 from Datasets.tartanDataset import TartanDataset
 
 from torch.utils.data import DataLoader,ConcatDataset,DistributedSampler
+import os
 
 def load_dataset(posefile,datastr,height,width,flow_only=True,rcr_type="NO_RCR"):
     focalx, focaly, centerx, centery = dataset_intrinsics(datastr) 
     transform = Compose([CropCenter((height,width)), DownscaleFlow(), ToTensor()])
     if rcr_type == "RCR" :
-        # if flow_only:
-        #     transform = Compose([CropCenter((height,width)), RandomCropAndResizedFlow(),DownscaleFlow(),ToTensor()])
-        # else:
-        transform = Compose([CropCenter((height,width)), RandomResizeCrop(size=(448, 640)),DownscaleFlow(),ToTensor()])
+        # Keep the same output size as the model input (paper uses 448x640).
+        transform = Compose([CropCenter((height,width)), RandomResizeCrop(size=(height, width)),DownscaleFlow(),ToTensor()])
 
     dataset = TartanDataset( posefile = posefile, transform=transform, 
                                                 focalx=focalx, focaly=focaly, centerx=centerx, centery=centery,flow_only=flow_only)
     return dataset
+
+def _collect_posefiles(posefile_path: str):
+    """
+    Accept either:
+    - a text file listing pose_left.txt paths (absolute or relative), one per line
+    - a directory (recursively finds all pose_left.txt under it)
+    """
+    posefile_path = os.path.expanduser(posefile_path)
+    if os.path.isdir(posefile_path):
+        root = os.path.abspath(posefile_path)
+        posefiles = []
+        for dirpath, _, filenames in os.walk(root):
+            if "pose_left.txt" in filenames:
+                posefiles.append(os.path.join(dirpath, "pose_left.txt"))
+        posefiles.sort()
+        return posefiles
+
+    if not os.path.isfile(posefile_path):
+        raise FileNotFoundError(f"train/val path not found: {posefile_path}")
+
+    list_dir = os.path.dirname(os.path.abspath(posefile_path))
+    with open(posefile_path, "r") as f:
+        lines = f.readlines()
+
+    posefiles = []
+    for line in lines:
+        p = line.strip()
+        if not p or p.startswith("#"):
+            continue
+        p = os.path.expanduser(p)
+        if not os.path.isabs(p):
+            p = os.path.abspath(os.path.join(list_dir, p))
+        posefiles.append(p)
+    return posefiles
+
 def get_loader(posefile_path, datastr, height, width, batch_size,  flow_only=True, rcr_type="NO_RCR",shuffle=False,rank=None,world_size=None):
     scene_datasets = []
     print(posefile_path)
-    with open(posefile_path, 'r') as f:
-        posefiles = f.readlines()
-    posefiles = [posefile.strip() for posefile in posefiles]
+    posefiles = _collect_posefiles(posefile_path)
+    print(f"Found {len(posefiles)} pose files")
     for posefile in posefiles:
         scene_datasets.append( load_dataset(posefile, datastr, height, width, flow_only=flow_only, rcr_type=rcr_type))
     dataset = ConcatDataset(scene_datasets)
@@ -77,6 +110,7 @@ def load_checkpoint(model, optimizer=None, scheduler=None, filepath="",map_locat
 
 def process_whole_sample(ddp_model,sample,lambda_flow,device_id):
     sample = {k: v.to(device_id) for k, v in sample.items()} 
+    model = ddp_model.module if hasattr(ddp_model, "module") else ddp_model
     # inputs-------------------------------------------------------------------
     img1 = sample['img1']
     img2 = sample['img2']
@@ -89,13 +123,14 @@ def process_whole_sample(ddp_model,sample,lambda_flow,device_id):
     # loss calculation---------------------------------------------------------
     flow_gt = sample['flow']
     motions_gt = sample['motion']
-    flow_loss = ddp_model.module.flowNet.get_loss(flow,flow_gt,small_scale=True)
-    pose_loss,trans_loss,rot_loss = ddp_model.module.flowPoseNet.linear_norm_trans_loss(relative_motion, motions_gt)
+    flow_loss = model.flowNet.get_loss(flow, flow_gt, small_scale=True)
+    pose_loss,trans_loss,rot_loss = model.flowPoseNet.linear_norm_trans_loss(relative_motion, motions_gt)
     total_loss = flow_loss*lambda_flow + pose_loss
     
     return total_loss,flow_loss,pose_loss,trans_loss,rot_loss
 def process_flow_sample(ddp_model,sample,lambda_flow,device_id):
     sample = {k: v.to(device_id) for k, v in sample.items()} 
+    model = ddp_model.module if hasattr(ddp_model, "module") else ddp_model
     # inputs-------------------------------------------------------------------
     img1 = sample['img1']
     img2 = sample['img2']
@@ -104,11 +139,12 @@ def process_flow_sample(ddp_model,sample,lambda_flow,device_id):
     flow = ddp_model([img1,img2])
     # loss calculation---------------------------------------------------------
     flow_gt = sample['flow']
-    flow_loss =  ddp_model.module.get_loss(flow,flow_gt,small_scale=True)
+    flow_loss = model.get_loss(flow, flow_gt, small_scale=True)
     return flow_loss
 
 def process_flowpose_sample(ddp_model,sample,device_id):
     sample = {k: v.to(device_id) for k, v in sample.items()} 
+    model = ddp_model.module if hasattr(ddp_model, "module") else ddp_model
     # inputs-------------------------------------------------------------------
     intrinsic_layer = sample['intrinsic']
     flow_gt = sample['flow']
@@ -120,7 +156,7 @@ def process_flowpose_sample(ddp_model,sample,device_id):
 
     # loss calculation---------------------------------------------------------
     motions_gt = sample['motion']
-    total_loss,trans_loss,rot_loss = calculate_pose_loss(relative_motion, motions_gt,device_id)
+    total_loss,trans_loss,rot_loss = model.linear_norm_trans_loss(relative_motion, motions_gt)
     
     return total_loss,trans_loss,rot_loss
 

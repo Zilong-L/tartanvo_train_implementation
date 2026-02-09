@@ -139,9 +139,7 @@ class PWCDCNet(nn.Module):
         xx = xx.view(1,1,H,W).repeat(B,1,1,1)
         yy = yy.view(1,1,H,W).repeat(B,1,1,1)
         grid = torch.cat((xx,yy),1).float()
-
-        if x.is_cuda:
-            grid = grid.cuda()
+        grid = grid.to(x.device)
         vgrid = grid + flo
 
         # scale grid to [-1,1] 
@@ -150,7 +148,7 @@ class PWCDCNet(nn.Module):
 
         vgrid = vgrid.permute(0,2,3,1)        
         output = nn.functional.grid_sample(x, vgrid, align_corners=True)
-        mask = torch.ones(x.size()).cuda()
+        mask = torch.ones_like(x)
         mask = nn.functional.grid_sample(mask, vgrid, align_corners=True)
 
         # if W==128:

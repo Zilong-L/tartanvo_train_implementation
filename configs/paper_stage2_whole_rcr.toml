@@ -1,0 +1,44 @@
+# Paper (TartanVO, arXiv:2011.00359) training config
+# Stage 2: jointly optimize matching network M_theta (PWC-Net) + pose network P_phi.
+#
+# Paper settings:
+# - iterations: 50,000
+# - batch size: 64 (trained on 4 GPUs)
+# - lr: 1e-4, decay x0.2 at 1/2 and 7/8 of total steps
+# - RCR augmentation applied on RGB, flow, and intrinsics layer (Sec. 3.4.2)
+#
+# NOTE: In this repo's DDP trainers, `batch_size` is PER-GPU.
+# With `torchrun --nproc_per_node=4`, batch_size=16 => global batch size 64.
+
+batch_size = 16
+learning_rate = 0.0001
+
+# Eq.(1) uses a lambda to balance flow loss and pose loss.
+# The paper does not specify a numeric value; 0.1 is this repo's default.
+lambda_flow = 0.1
+
+datastr = 'tartanair'
+flow_only = false
+rcr_type = "RCR"
+shuffle = true
+
+image_width = 640
+image_height = 448
+
+total_iterations = 50000
+train_path = "data/train_pose.txt"
+val_path = "data/val_pose.txt"
+
+# IMPORTANT:
+# Stage 2 should start from:
+# - pretrained PWC-Net weights (e.g. FlyingChairs)
+# - the Stage 1 pose-net checkpoint
+# This repo already provides a combined init checkpoint:
+pretrained_model_path = "checkpoints/whole_rcr/init.pth"
+#
+# If you train Stage 1 with `configs/paper_stage1_pose_rcr.toml`, you can generate your own
+# combined init checkpoint (and point this field to it).
+
+save_path = "checkpoints/paper_stage2_whole_rcr"
+summary_path = "logs/paper_stage2_whole_rcr"
+

@@ -139,14 +139,20 @@ class VOFlowRes(nn.Module):
         output_trans = output[:, :3]
         output_rot = output[:, 3:]
 
-        trans_norm = torch.norm(output_trans, dim=1).view(-1, 1)
-        output_norm = output_trans/trans_norm
+        # Paper Eq.(3): normalize BOTH predicted and GT translation to remove scale ambiguity.
+        eps = 1e-6
+        pred_trans_norm = torch.norm(output_trans, dim=1, keepdim=True).clamp_min(eps)
+        output_norm = output_trans / pred_trans_norm
+
+        motion_trans = motion[:, :3]
+        gt_trans_norm = torch.norm(motion_trans, dim=1, keepdim=True).clamp_min(eps)
+        motion_norm = motion_trans / gt_trans_norm
 
         if mask is None:
-            trans_loss = self.criterion(output_norm, motion[:, :3])
+            trans_loss = self.criterion(output_norm, motion_norm)
             rot_loss = self.criterion(output_rot, motion[:, 3:])
         else:
-            trans_loss = self.criterion(output_norm[mask,:], motion[mask, :3])
+            trans_loss = self.criterion(output_norm[mask, :], motion_norm[mask, :])
             rot_loss = self.criterion(output_rot[mask,:], motion[mask, 3:])
 
         loss = (rot_loss + trans_loss)/2.0

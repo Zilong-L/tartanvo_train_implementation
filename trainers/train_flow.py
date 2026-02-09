@@ -9,6 +9,7 @@ from Network.VONet import VONet
 from utils.train_utils import  load_checkpoint, process_flow_sample, save_checkpoint, get_loader
 import argparse
 from Network.PWC import PWCDCNet as FlowNet
+import os
 
 if __name__ == '__main__':
     args = argparse.ArgumentParser()
@@ -20,7 +21,9 @@ if __name__ == '__main__':
         
     dist.init_process_group("nccl")
     rank = dist.get_rank()
-    device_id = rank % torch.cuda.device_count()
+    local_rank = int(os.environ.get("LOCAL_RANK", rank))
+    torch.cuda.set_device(local_rank)
+    device_id = local_rank
 
     datastr = config['datastr']
     train_path = config['train_path']
@@ -48,22 +51,24 @@ if __name__ == '__main__':
             return 0.04
         
     iteration = 0 
-    torch.cuda.set_device(rank)
     torch.cuda.empty_cache()
     model = FlowNet().to(device_id)
     ddp_model = DDP(model, device_ids=[device_id],find_unused_parameters=True)
-    map_location = {'cuda:%d' % 0: 'cuda:%d' % rank}
+    map_location = {'cuda:%d' % 0: 'cuda:%d' % device_id}
 
     optimizer = torch.optim.Adam(ddp_model.parameters(), lr=learning_rate)
     scheduler = LambdaLR(optimizer, lr_lambda)
-    summaryWriter = SummaryWriter(summary_path)
+    summaryWriter = SummaryWriter(summary_path) if rank == 0 else None
     iteration = load_checkpoint(ddp_model, optimizer, scheduler, pretrained_model_path,map_location=map_location)
 
 
     train_dataloader = get_loader(train_path, datastr,image_height,image_width, batch_size, flow_only=flow_only, rcr_type=rcr_type,shuffle=shuffle,rank=rank,world_size=dist.get_world_size())
     val_dataloader = get_loader(val_path, datastr,image_height,image_width, batch_size, flow_only=flow_only, rcr_type=rcr_type,shuffle=shuffle,rank=rank,world_size=dist.get_world_size())
 
+    epoch = 0
     while iteration < total_iterations:
+        if hasattr(train_dataloader, "sampler") and hasattr(train_dataloader.sampler, "set_epoch"):
+            train_dataloader.sampler.set_epoch(epoch)
         for sample in train_dataloader:
             ddp_model.train()
             optimizer.zero_grad()  # Zero the parameter gradients
@@ -118,5 +123,6 @@ if __name__ == '__main__':
         if rank == 0:
             model_save_path = f'{save_path}/flowpose_model_iteration_{iteration}.pth'
             save_checkpoint( ddp_model, optimizer, scheduler,  iteration, model_save_path)
+        epoch += 1
         
     dist.destroy_process_group()

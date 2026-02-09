@@ -8,6 +8,7 @@ from Network.VOFlowNet import VOFlowRes as FlowPoseNet
 
 from utils.train_utils import  load_checkpoint, save_checkpoint, process_flowpose_sample,get_loader
 import argparse
+import os
 
 
 if __name__ == '__main__':
@@ -20,7 +21,9 @@ if __name__ == '__main__':
         
     dist.init_process_group("nccl")
     rank = dist.get_rank()
-    device_id = rank % torch.cuda.device_count()
+    local_rank = int(os.environ.get("LOCAL_RANK", rank))
+    torch.cuda.set_device(local_rank)
+    device_id = local_rank
 
     datastr = config['datastr']
     train_path = config['train_path']
@@ -47,22 +50,24 @@ if __name__ == '__main__':
             return 0.04
         
     iteration = 0 
-    torch.cuda.set_device(rank)
     torch.cuda.empty_cache()
     model = FlowPoseNet().to(device_id)
     ddp_model = DDP(model, device_ids=[device_id])
-    map_location = {'cuda:%d' % 0: 'cuda:%d' % rank}
+    map_location = {'cuda:%d' % 0: 'cuda:%d' % device_id}
     
     optimizer = torch.optim.Adam(ddp_model.parameters(), lr=learning_rate)
     scheduler = LambdaLR(optimizer, lr_lambda)
-    summaryWriter = SummaryWriter(summary_path)
+    summaryWriter = SummaryWriter(summary_path) if rank == 0 else None
     iteration = load_checkpoint(ddp_model, optimizer, scheduler, pretrained_model_path,map_location=map_location)
 
 
     train_dataloader = get_loader(train_path, datastr,image_height,image_width, batch_size, flow_only=flow_only, rcr_type=rcr_type,shuffle=shuffle,rank=rank,world_size=dist.get_world_size())
     val_dataloader = get_loader(val_path, datastr,image_height,image_width, batch_size, flow_only=flow_only, rcr_type=rcr_type,shuffle=shuffle,rank=rank,world_size=dist.get_world_size())
 
+    epoch = 0
     while iteration < total_iterations:
+        if hasattr(train_dataloader, "sampler") and hasattr(train_dataloader.sampler, "set_epoch"):
+            train_dataloader.sampler.set_epoch(epoch)
         for sample in train_dataloader:
             ddp_model.train()
             optimizer.zero_grad()  # Zero the parameter gradients
@@ -83,33 +88,34 @@ if __name__ == '__main__':
                     summaryWriter.add_scalar('Loss/train_trans', trans_loss, iteration)
                     summaryWriter.add_scalar('Loss/train_rot', rot_loss, iteration)
                     print(f"Step {iteration}, Loss: {total_loss}, translation loss: {trans_loss}, rotation loss: {rot_loss}")
-                if iteration % 500 == 0:
-                    ddp_model.eval()
-                    val_pose, val_trans, val_rot, samplecount = 0, 0, 0, 0
-                    with torch.no_grad():
-                        for sample in val_dataloader:
-                            sample = {k: v.to(device_id) for k, v in sample.items()} 
-                            # inputs------------------------------------------------------------------- 
-                            total_loss,trans_loss,rot_loss = process_flowpose_sample(ddp_model,sample,device_id)
+                # if iteration % 500 == 0:
+                #     ddp_model.eval()
+                #     val_pose, val_trans, val_rot, samplecount = 0, 0, 0, 0
+                #     with torch.no_grad():
+                #         for sample in val_dataloader:
+                #             sample = {k: v.to(device_id) for k, v in sample.items()} 
+                #             # inputs------------------------------------------------------------------- 
+                #             total_loss,trans_loss,rot_loss = process_flowpose_sample(ddp_model,sample,device_id)
 
-                            val_pose += total_loss.item()
-                            val_trans += trans_loss.item()
-                            val_rot += rot_loss.item()
-                            samplecount += 1
-                        val_pose = val_pose/samplecount
-                        val_trans = val_trans/samplecount
-                        val_rot = val_rot/samplecount
+                #             val_pose += total_loss.item()
+                #             val_trans += trans_loss
+                #             val_rot += rot_loss
+                #             samplecount += 1
+                #         val_pose = val_pose/samplecount
+                #         val_trans = val_trans/samplecount
+                #         val_rot = val_rot/samplecount
                         
-                        if rank == 0 :
-                            summaryWriter.add_scalar('Loss/val_pose', val_pose, iteration)
-                            summaryWriter.add_scalar('Loss/val_trans', val_trans, iteration)
-                            summaryWriter.add_scalar('Loss/val_rot', val_rot, iteration)
-                            print(f"Step {iteration}, validation Loss: {val_pose}, translation loss: {val_trans}, rotation loss: {val_rot}")
+                #         if rank == 0 :
+                #             summaryWriter.add_scalar('Loss/val_pose', val_pose, iteration)
+                #             summaryWriter.add_scalar('Loss/val_trans', val_trans, iteration)
+                #             summaryWriter.add_scalar('Loss/val_rot', val_rot, iteration)
+                #             print(f"Step {iteration}, validation Loss: {val_pose}, translation loss: {val_trans}, rotation loss: {val_rot}")
                 if iteration % 2500 == 0:
                     model_save_path = f'{save_path}/flowpose_model_iteration_{iteration}.pth'
                     save_checkpoint( ddp_model, optimizer, scheduler,  iteration, model_save_path)
         if rank == 0:
             model_save_path = f'{save_path}/flowpose_model_iteration_{iteration}.pth'
             save_checkpoint( ddp_model, optimizer, scheduler,  iteration, model_save_path)
+        epoch += 1
         
     dist.destroy_process_group()
